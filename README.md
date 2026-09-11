@@ -147,7 +147,7 @@ The backend is deployed with the frontend on Vercel:
 | --- | --- |
 | `GET /api/health` | Fast service and database health check |
 | `POST /api/auth/login` | Create an eight-hour signed role session |
-| `GET /api/auth/google/start` | Start Google OAuth authorization |
+| `GET /api/auth/google?start=1` | Start Google OAuth authorization |
 | `GET /api/auth/google` | Validate the Google callback and create a session |
 | `GET /api/auth/me` | Read the current authenticated user |
 | `POST /api/auth/logout` | Clear the role session |

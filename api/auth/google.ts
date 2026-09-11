@@ -1,12 +1,13 @@
 import { createSession, googleRole, sessionCookie } from '../_lib/auth'
 import { json } from '../_lib/http'
-import { jwtVerify } from 'jose'
+import { jwtVerify, SignJWT } from 'jose'
 
 const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
 const stateSecret = () => new TextEncoder().encode(env.JWT_SECRET || 'local-development-secret-change-me')
 
 export default async function handler(request: Request) {
   const url = new URL(request.url)
+  if (url.searchParams.get('start') === '1') return startGoogle(request)
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
   if (!code) return json({ error: 'Google authorization code is required.' }, { status: 400 })
@@ -30,4 +31,11 @@ export default async function handler(request: Request) {
     console.error('google_oauth_failed', error)
     return json({ error: 'Google sign-in could not be completed.' }, { status: 503 })
   }
+}
+
+async function startGoogle(request: Request) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI || !env.JWT_SECRET) return json({ error: 'Google OAuth is not configured.' }, { status: 503 })
+  const state = await new SignJWT({ origin: new URL(request.url).origin }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('10m').sign(stateSecret())
+  const params = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: env.GOOGLE_REDIRECT_URI, response_type: 'code', scope: 'openid email profile', access_type: 'online', state })
+  return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, 302)
 }
