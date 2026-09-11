@@ -1,7 +1,7 @@
 import { jwtVerify, SignJWT } from 'jose'
 
 export type Role = 'community' | 'government' | 'donor'
-export type Session = { sub: string; name: string; role: Role }
+export type Session = { sub: string; name: string; email: string; role: Role }
 const COOKIE = 'maji_session'
 const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
 
@@ -20,7 +20,7 @@ export async function readSession(request: Request): Promise<Session | null> {
   try {
     const { payload } = await jwtVerify(token, secret())
     if (payload.role !== 'community' && payload.role !== 'government' && payload.role !== 'donor') return null
-    return { sub: String(payload.sub), name: String(payload.name), role: payload.role }
+    return { sub: String(payload.sub), name: String(payload.name), email: String(payload.email), role: payload.role }
   } catch { return null }
 }
 
@@ -35,6 +35,15 @@ export function clearSessionCookie() {
 export function canCreateProject(role: Role) { return role === 'community' || role === 'government' }
 export function canRequestFunding(role: Role) { return role === 'community' || role === 'government' }
 export function canDonate(role: Role) { return role === 'donor' }
+
+export function googleRole(email: string): Role | null {
+  const normalized = email.toLowerCase()
+  const list = (key: string) => (env[key] ?? '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
+  if (list('GOOGLE_GOVERNMENT_EMAILS').includes(normalized)) return 'government'
+  if (list('GOOGLE_DONOR_EMAILS').includes(normalized)) return 'donor'
+  if (list('GOOGLE_COMMUNITY_EMAILS').includes(normalized)) return 'community'
+  return null
+}
 
 export async function requireSession(request: Request) {
   const session = await readSession(request)

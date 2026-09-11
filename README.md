@@ -147,6 +147,8 @@ The backend is deployed with the frontend on Vercel:
 | --- | --- |
 | `GET /api/health` | Fast service and database health check |
 | `POST /api/auth/login` | Create an eight-hour signed role session |
+| `GET /api/auth/google/start` | Start Google OAuth authorization |
+| `GET /api/auth/google` | Validate the Google callback and create a session |
 | `GET /api/auth/me` | Read the current authenticated user |
 | `POST /api/auth/logout` | Clear the role session |
 | `GET /api/dashboard` | Cached dashboard payload for the frontend |
@@ -160,6 +162,8 @@ Configure these Vercel environment variables:
 - `DATABASE_URL`: Neon pooled connection string. Without it, reads and report submissions use a non-persistent demo mode.
 - `CRON_SECRET`: optional secret used to protect manual cron calls. Vercel automatically sends it for configured cron jobs when set.
 - `JWT_SECRET`: long random secret used to sign and verify role sessions. Required in production.
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`: Google OAuth web client settings.
+- `GOOGLE_COMMUNITY_EMAILS`, `GOOGLE_GOVERNMENT_EMAILS`, `GOOGLE_DONOR_EMAILS`: comma-separated approved Google accounts. The server assigns the role; users cannot choose a production role in the browser.
 
 The cron is scheduled for `02:00 UTC` with `0 2 * * *`. This once-daily frequency is compatible with Vercel Hobby plans. Hobby timing is approximate, so the job may run any time during the scheduled hour; it must not be used as an exact-time payment trigger.
 
@@ -175,6 +179,16 @@ The cron is scheduled for `02:00 UTC` with `0 2 * * *`. This once-daily frequenc
 | Change project lifecycle state | Project owner | Government oversight | No |
 
 Project state transitions are validated server-side: `Draft -> Submitted -> In progress -> Completed`. Invalid jumps are rejected, and each accepted transition is recorded in the activity log. In local Vite development, the login screen supports a demo session because Vercel API functions are not executed by the Vite dev server; deployed Vercel sessions are signed and enforced by the API.
+
+### Google OAuth setup
+
+1. In Google Cloud Console, create an OAuth 2.0 **Web application** client.
+2. Add the exact Vercel callback URL from `GOOGLE_REDIRECT_URI` to **Authorized redirect URIs**, for example `https://your-domain.vercel.app/api/auth/google`.
+3. Add the client ID, client secret, `JWT_SECRET`, and role allowlists to Vercel project environment variables for Production and Preview as appropriate.
+4. Use the Google account allowlists to assign roles. Do not let the browser submit a production role.
+5. Deploy and test `/api/health`, then sign in through the Google button.
+
+No MajiShwari password is collected or stored. Google handles identity verification, the callback validates the authorization code and verified email, and the app stores only an encrypted-by-signature, HttpOnly session cookie. Rotate any credentials that have been exposed outside Vercel's secret environment settings.
 
 Run [`db/schema.sql`](db/schema.sql) once against the Neon database. The API also performs an idempotent schema check on a cold start, which keeps first deployment simple while the warm-instance promise avoids repeating DDL on every request.
 
