@@ -15,6 +15,8 @@ Tasks extracted from `CLIMATE FINANCE VERIFICATION PLATFORM.pdf` and executed in
 - [x] Add cached dashboard responses, warm connection/schema reuse, and demo fallback reads.
 - [x] Add a Hobby-compatible daily Vercel cron for stale audit and project reconciliation.
 - [x] Wire the frontend report intake and dashboard loading to the backend service.
+- [x] Back every user dashboard tab with a shared workspace API payload.
+- [x] Persist fund releases, vulnerability scores, and activity events in Neon-ready tables.
 
 Run from `app/` with:
 

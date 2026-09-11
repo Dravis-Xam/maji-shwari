@@ -29,3 +29,26 @@ CREATE TABLE IF NOT EXISTS audit_flags (
 );
 
 CREATE INDEX IF NOT EXISTS reports_project_created_idx ON reports(project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS fund_releases (
+  id BIGSERIAL PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  milestone TEXT NOT NULL,
+  amount_cents BIGINT NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'Pending approval',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vulnerability_scores (
+  county TEXT PRIMARY KEY,
+  score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100),
+  label TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS activity_events (
+  id BIGSERIAL PRIMARY KEY,
+  event TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

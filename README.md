@@ -147,6 +147,7 @@ The backend is deployed with the frontend on Vercel:
 | --- | --- |
 | `GET /api/health` | Fast service and database health check |
 | `GET /api/dashboard` | Cached dashboard payload for the frontend |
+| `GET /api/workspace` | Cached releases, vulnerability scores, rules, and activity payload |
 | `GET /api/reports` | Recent report read endpoint |
 | `POST /api/reports` | Validate, deduplicate, persist, and transition a report |
 | `GET /api/cron/reconcile` | Daily stale-flag and project reconciliation |
@@ -163,6 +164,7 @@ Run [`db/schema.sql`](db/schema.sql) once against the Neon database. The API als
 ### Low-bandwidth and resilience choices
 
 - Dashboard responses use `s-maxage` and `stale-while-revalidate` so repeated visits do not always hit Neon.
+- All dashboard tabs share one compact workspace request, reducing round trips on slow connections.
 - The frontend ships as a static Vite bundle and only requests one compact dashboard payload on load.
 - The report endpoint validates before touching the database and uses a unique `(project, reporter, status)` key for idempotent retries.
 - Phone numbers are converted into a short reporter key before storage; raw numbers are not written to the database.
