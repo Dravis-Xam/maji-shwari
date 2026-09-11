@@ -2,6 +2,7 @@ import { demoDashboard } from './_lib/demo'
 import { hasDatabase, ensureSchema, sql } from './_lib/db'
 import { json, methodNotAllowed } from './_lib/http'
 import type { ReportStatus } from './_lib/types'
+import { requireSession } from './_lib/auth'
 
 const reportPattern = /^([A-Z0-9-]{3,32})\s+(DONE|DELAYED|INCOMPLETE|PROBLEM)$/i
 type ProjectRow = { id: string; required_confirmations: number }
@@ -19,6 +20,8 @@ function hashReporter(phone: string) {
 }
 
 export default async function handler(request: Request) {
+  const auth = await requireSession(request)
+  if (auth.response) return auth.response
   if (request.method === 'GET') return json({ reports: demoDashboard.reports })
   if (request.method !== 'POST') return methodNotAllowed(['GET', 'POST'])
 

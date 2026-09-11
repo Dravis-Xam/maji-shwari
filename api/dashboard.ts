@@ -2,11 +2,14 @@ import { demoDashboard } from './_lib/demo'
 import { hasDatabase, ensureSchema, sql } from './_lib/db'
 import { cacheHeaders, json, methodNotAllowed } from './_lib/http'
 import type { DashboardPayload } from './_lib/types'
+import { requireSession } from './_lib/auth'
 
 type ProjectRow = { id: string; name: string; county: string; status: string; required_confirmations: number; current_progress: number; amount_cents: number; confirmations: number }
 type ReportRow = { raw_message: string; created_at: string; status: string; reporter_key: string }
 
 export default async function handler(request: Request) {
+  const auth = await requireSession(request)
+  if (auth.response) return auth.response
   if (request.method !== 'GET') return methodNotAllowed(['GET'])
   if (!hasDatabase()) return json(demoDashboard, { headers: cacheHeaders(30) })
 

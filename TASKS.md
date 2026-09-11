@@ -17,6 +17,9 @@ Tasks extracted from `CLIMATE FINANCE VERIFICATION PLATFORM.pdf` and executed in
 - [x] Wire the frontend report intake and dashboard loading to the backend service.
 - [x] Back every user dashboard tab with a shared workspace API payload.
 - [x] Persist fund releases, vulnerability scores, and activity events in Neon-ready tables.
+- [x] Add signed role sessions and server-side role authorization.
+- [x] Add project creation, donor funding requests, donor RODs, and lifecycle validation.
+- [x] Refresh report and project state changes in the dashboard UI.
 
 Run from `app/` with:
 

@@ -33,6 +33,11 @@ async function createSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id TEXT`
+  await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_role TEXT`
+  await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan TEXT`
+  await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS artifacts TEXT`
+  await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS contact TEXT`
   await query`
     CREATE TABLE IF NOT EXISTS reports (
       id BIGSERIAL PRIMARY KEY,
@@ -78,6 +83,19 @@ async function createSchema() {
       id BIGSERIAL PRIMARY KEY,
       event TEXT NOT NULL,
       detail TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await query`
+    CREATE TABLE IF NOT EXISTS funding_requests (
+      id BIGSERIAL PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      requester_id TEXT NOT NULL,
+      donor_id TEXT,
+      kind TEXT NOT NULL CHECK (kind IN ('request', 'rod')),
+      message TEXT NOT NULL,
+      amount_cents BIGINT NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Open',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `

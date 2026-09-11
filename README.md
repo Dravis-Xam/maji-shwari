@@ -146,6 +146,9 @@ The backend is deployed with the frontend on Vercel:
 | Route | Purpose |
 | --- | --- |
 | `GET /api/health` | Fast service and database health check |
+| `POST /api/auth/login` | Create an eight-hour signed role session |
+| `GET /api/auth/me` | Read the current authenticated user |
+| `POST /api/auth/logout` | Clear the role session |
 | `GET /api/dashboard` | Cached dashboard payload for the frontend |
 | `GET /api/workspace` | Cached releases, vulnerability scores, rules, and activity payload |
 | `GET /api/reports` | Recent report read endpoint |
@@ -156,8 +159,22 @@ Configure these Vercel environment variables:
 
 - `DATABASE_URL`: Neon pooled connection string. Without it, reads and report submissions use a non-persistent demo mode.
 - `CRON_SECRET`: optional secret used to protect manual cron calls. Vercel automatically sends it for configured cron jobs when set.
+- `JWT_SECRET`: long random secret used to sign and verify role sessions. Required in production.
 
 The cron is scheduled for `02:00 UTC` with `0 2 * * *`. This once-daily frequency is compatible with Vercel Hobby plans. Hobby timing is approximate, so the job may run any time during the scheduled hour; it must not be used as an exact-time payment trigger.
+
+### Role permissions
+
+| Capability | Community | Government | Donor |
+| --- | --- | --- | --- |
+| View projects, progress, utilization, alerts, reports, and activity | Yes | Yes | Yes |
+| Create a project and submit its plan, artifacts, and contact | Yes | Yes | No |
+| Request funding from donors | Yes | Yes | No |
+| Submit a request to donate (ROD) to a selected project | No | No | Yes |
+| Submit community progress reports | Yes | Yes | Yes |
+| Change project lifecycle state | Project owner | Government oversight | No |
+
+Project state transitions are validated server-side: `Draft -> Submitted -> In progress -> Completed`. Invalid jumps are rejected, and each accepted transition is recorded in the activity log. In local Vite development, the login screen supports a demo session because Vercel API functions are not executed by the Vite dev server; deployed Vercel sessions are signed and enforced by the API.
 
 Run [`db/schema.sql`](db/schema.sql) once against the Neon database. The API also performs an idempotent schema check on a cold start, which keeps first deployment simple while the warm-instance promise avoids repeating DDL on every request.
 

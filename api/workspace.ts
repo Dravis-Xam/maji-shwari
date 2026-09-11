@@ -1,8 +1,11 @@
 import { demoWorkspace, type WorkspacePayload } from './_lib/workspace'
 import { hasDatabase, ensureSchema, sql } from './_lib/db'
 import { cacheHeaders, json, methodNotAllowed } from './_lib/http'
+import { requireSession } from './_lib/auth'
 
 export default async function handler(request: Request) {
+  const auth = await requireSession(request)
+  if (auth.response) return auth.response
   if (request.method !== 'GET') return methodNotAllowed(['GET'])
   if (!hasDatabase()) return json(demoWorkspace, { headers: cacheHeaders(60) })
 
