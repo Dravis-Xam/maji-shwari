@@ -126,6 +126,7 @@ function App() {
     const payload = await response.json()
     if (!response.ok) return setNotice(payload.error ?? 'Action could not be completed.')
     setActionKind(null)
+    if (actionKind === 'project') setTourStep(0)
     setNotice(actionKind === 'project' ? 'Project created as Draft and queued for validation.' : actionKind === 'rod' ? 'Request to donate sent to the project owner.' : 'Funding request sent to donors.')
     window.setTimeout(() => setNotice(''), 4500)
   }
