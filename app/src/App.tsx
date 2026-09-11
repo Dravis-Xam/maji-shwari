@@ -16,6 +16,7 @@ const demoReports = [
   { message: 'WTR-117 DELAYED', source: 'SMS · +254 728 ••• 104', time: '21 min ago', tone: 'warning', label: 'Audit flag' },
   { message: 'FRM-089 DONE', source: 'SMS · +254 701 ••• 927', time: '34 min ago', tone: 'positive', label: 'Confirmed' },
 ]
+const demoMetrics = { capitalMonitored: 'KES 84.6M', activeProjects: 24, confirmations: 1284, reportsNeedingReview: 3 }
 
 function App() {
   const [activeNav, setActiveNav] = useState('Overview')
@@ -23,28 +24,39 @@ function App() {
   const [notice, setNotice] = useState('')
   const [projects, setProjects] = useState(demoProjects)
   const [reports, setReports] = useState(demoReports)
+  const [metrics, setMetrics] = useState(demoMetrics)
+  const [dataSource, setDataSource] = useState<'demo' | 'neon'>('demo')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [reportMessage, setReportMessage] = useState('')
   const [reportPhone, setReportPhone] = useState('')
 
   useEffect(() => {
     fetch('/api/dashboard')
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('Dashboard unavailable')))
-      .then((payload) => { setProjects(payload.projects); setReports(payload.reports) })
+      .then((payload) => { setProjects(payload.projects); setReports(payload.reports); setMetrics(payload.metrics); setDataSource(payload.source) })
       .catch(() => setNotice('Showing demo data while the backend is unavailable.'))
   }, [])
 
   const handleReport = async () => {
-    const response = await fetch('/api/reports', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: reportMessage, phone: reportPhone }) })
-    const payload = await response.json()
-    if (!response.ok) {
-      setNotice(payload.error ?? 'Report could not be submitted.')
-      return
+    setIsSubmitting(true)
+    try {
+      const response = await fetch('/api/reports', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: reportMessage, phone: reportPhone }) })
+      const payload = await response.json()
+      if (!response.ok) {
+        setNotice(payload.error ?? 'Report could not be submitted.')
+        return
+      }
+      setShowReport(false)
+      setReportMessage('')
+      setReportPhone('')
+      const result = payload.state === 'verified' ? 'Project verified after reaching its confirmation threshold.' : payload.state === 'audit_flagged' ? 'Report recorded and an audit flag was created.' : payload.demo ? 'Report accepted in demo mode. Add DATABASE_URL to persist it in Neon.' : 'Report queued for verification. The community will receive an SMS confirmation.'
+      setNotice(result)
+      window.setTimeout(() => setNotice(''), 4500)
+    } catch {
+      setNotice('Backend unavailable. Check your connection and try again.')
+    } finally {
+      setIsSubmitting(false)
     }
-    setShowReport(false)
-    setReportMessage('')
-    setReportPhone('')
-    setNotice(payload.demo ? 'Report accepted in demo mode. Add DATABASE_URL to persist it in Neon.' : 'Report queued for verification. The community will receive an SMS confirmation.')
-    window.setTimeout(() => setNotice(''), 4500)
   }
 
   return <div className="app-shell">
@@ -60,13 +72,13 @@ function App() {
     <main className="main-content">
       <header className="topbar"><button className="mobile-menu" aria-label="Open menu"><Menu size={20} /></button><div className="crumb"><span>Kenya Climate Desk</span><span>/</span><strong>{activeNav}</strong></div><div className="top-actions"><div className="search"><Search size={16} /><input placeholder="Search projects, reports..." /></div><button className="icon-button" aria-label="Notifications"><Bell size={18} /><i /></button><div className="avatar-small">BW</div></div></header>
       <div className="content-wrap">
-        <section className="page-heading"><div><p className="eyebrow">THURSDAY, 10 SEPTEMBER 2026 <span className="live-dot" /> Live data</p><h1>Good morning, Bruno</h1><p className="subheading">Here’s the accountability pulse across your climate projects.</p></div><button className="primary-button" onClick={() => setShowReport(true)}><MessageSquareText size={17} /> Log community report</button></section>
+        <section className="page-heading"><div><p className="eyebrow">THURSDAY, 10 SEPTEMBER 2026 <span className="live-dot" /> Live data <span className={`data-status ${dataSource}`}>{dataSource === 'neon' ? 'Neon connected' : 'Demo mode'}</span></p><h1>Good morning, Bruno</h1><p className="subheading">Here’s the accountability pulse across your climate projects.</p></div><button className="primary-button" onClick={() => setShowReport(true)}><MessageSquareText size={17} /> Log community report</button></section>
         {notice && <div className="toast"><CheckCircle2 size={18} /> {notice}<button onClick={() => setNotice('')}><X size={15} /></button></div>}
         <section className="stat-grid">
-          <div className="stat-card accent-card"><div className="stat-top"><span>Capital monitored</span><span className="stat-icon green-icon"><CircleDollarSign size={17} /></span></div><strong>KES 84.6M</strong><div className="stat-meta up"><ArrowUpRight size={14} /> 12.8% <span>vs last month</span></div></div>
-          <div className="stat-card"><div className="stat-top"><span>Active projects</span><span className="stat-icon blue-icon"><Sprout size={17} /></span></div><strong>24</strong><div className="stat-meta"><span className="muted">18 verified · 6 in review</span></div></div>
-          <div className="stat-card"><div className="stat-top"><span>Community confirmations</span><span className="stat-icon yellow-icon"><MessageSquareText size={17} /></span></div><strong>1,284</strong><div className="stat-meta up"><ArrowUpRight size={14} /> 8.4% <span>this month</span></div></div>
-          <div className="stat-card"><div className="stat-top"><span>Reports needing review</span><span className="stat-icon red-icon"><AlertTriangle size={17} /></span></div><strong>03</strong><div className="stat-meta warning-text"><span>Requires attention</span><ArrowUpRight size={14} /></div></div>
+          <div className="stat-card accent-card"><div className="stat-top"><span>Capital monitored</span><span className="stat-icon green-icon"><CircleDollarSign size={17} /></span></div><strong>{metrics.capitalMonitored}</strong><div className="stat-meta up"><ArrowUpRight size={14} /> 12.8% <span>vs last month</span></div></div>
+          <div className="stat-card"><div className="stat-top"><span>Active projects</span><span className="stat-icon blue-icon"><Sprout size={17} /></span></div><strong>{metrics.activeProjects}</strong><div className="stat-meta"><span className="muted">{projects.filter((project) => project.status === 'Verified').length} verified · {projects.filter((project) => project.status !== 'Verified').length} in review</span></div></div>
+          <div className="stat-card"><div className="stat-top"><span>Community confirmations</span><span className="stat-icon yellow-icon"><MessageSquareText size={17} /></span></div><strong>{metrics.confirmations.toLocaleString()}</strong><div className="stat-meta up"><ArrowUpRight size={14} /> 8.4% <span>this month</span></div></div>
+          <div className="stat-card"><div className="stat-top"><span>Reports needing review</span><span className="stat-icon red-icon"><AlertTriangle size={17} /></span></div><strong>{String(metrics.reportsNeedingReview).padStart(2, '0')}</strong><div className="stat-meta warning-text"><span>Requires attention</span><ArrowUpRight size={14} /></div></div>
         </section>
         <section className="main-grid"><div className="panel project-panel"><div className="panel-heading"><div><h2>Project verification</h2><p>Community signal across active projects</p></div><button className="select-button">All counties <ChevronDown size={15} /></button></div><div className="table-head"><span>Project</span><span>Confirmations</span><span>Progress</span><span>Status</span><span>Funding</span></div>{projects.map((project) => <div className="project-row" key={project.id}><div className="project-name"><span className={`project-badge ${project.color}`}><Sprout size={15} /></span><div><strong>{project.name}</strong><small>{project.id} · {project.county}</small></div></div><div className="confirmation"><strong>{project.confirmations.split(' / ')[0]}</strong><span> / {project.confirmations.split(' / ')[1]} needed</span></div><div className="progress-wrap"><div className="progress-bar"><span style={{ width: `${project.progress}%` }} /></div><small>{project.progress}%</small></div><span className={`status ${project.status === 'Verified' ? 'verified' : 'review'}`}><span />{project.status}</span><strong className="funding">{project.amount}</strong></div>)}<button className="view-all">View all projects <ArrowUpRight size={15} /></button></div>
           <div className="panel activity-panel"><div className="panel-heading"><div><h2>Latest reports</h2><p>Incoming from community SMS</p></div><button className="filter-button" aria-label="Filter reports"><Filter size={16} /></button></div><div className="report-list">{reports.map((report) => <div className="report-item" key={report.message}><span className={`report-icon ${report.tone}`}>{report.tone === 'positive' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}</span><div><strong>{report.message}</strong><small>{report.source}</small></div><div className="report-time"><span className={report.tone}>{report.label}</span><small>{report.time}</small></div></div>)}</div><button className="view-all">Open report inbox <ArrowUpRight size={15} /></button></div></section>
@@ -74,7 +86,7 @@ function App() {
           <div className="panel map-panel"><div className="panel-heading"><div><h2>Vulnerability watch</h2><p>County risk index · live analysis</p></div><button className="filter-button" aria-label="Open map"><ArrowUpRight size={16} /></button></div><div className="map-visual"><div className="map-river" /><span className="map-label label-one">Turkana <b>82</b></span><span className="map-label label-two">Kitui <b>64</b></span><span className="map-label label-three">Makueni <b>41</b></span><span className="map-label label-four">Tana River <b>73</b></span><div className="map-pin pin-one" /><div className="map-pin pin-two" /><div className="map-pin pin-three" /></div><div className="risk-footer"><span><i className="risk-high" /> High risk</span><span><i className="risk-mid" /> Watch</span><span><i className="risk-low" /> Stable</span><button className="text-button">Open map <ArrowUpRight size={14} /></button></div></div></section>
       </div>
     </main>
-    {showReport && <div className="modal-backdrop" onClick={() => setShowReport(false)}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">COMMUNITY INTAKE</p><h2>Log a report</h2></div><button className="close-button" onClick={() => setShowReport(false)}><X size={18} /></button></div><label>SMS message<input value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="BHR-042 DONE" /></label><label>Source phone number<input value={reportPhone} onChange={(event) => setReportPhone(event.target.value)} placeholder="+254 7•• ••• •••" /></label><div className="modal-actions"><button className="secondary-button" onClick={() => setShowReport(false)}>Cancel</button><button className="primary-button" onClick={handleReport}><CheckCircle2 size={16} /> Queue report</button></div></div></div>}
+    {showReport && <div className="modal-backdrop" onClick={() => setShowReport(false)}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">COMMUNITY INTAKE</p><h2>Log a report</h2></div><button className="close-button" onClick={() => setShowReport(false)}><X size={18} /></button></div><p className="modal-help">Use a project code and status, for example <strong>BHR-042 DONE</strong> or <strong>WTR-117 DELAYED</strong>.</p><label>SMS message<input value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="BHR-042 DONE" /></label><label>Source phone number<input value={reportPhone} onChange={(event) => setReportPhone(event.target.value)} placeholder="+254 7•• ••• •••" /></label><div className="modal-actions"><button className="secondary-button" onClick={() => setShowReport(false)}>Cancel</button><button className="primary-button" disabled={isSubmitting || !reportMessage || !reportPhone} onClick={handleReport}>{isSubmitting ? 'Submitting...' : <><CheckCircle2 size={16} /> Queue report</>}</button></div></div></div>}
   </div>
 }
 export default App
