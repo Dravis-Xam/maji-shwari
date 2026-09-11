@@ -4,6 +4,8 @@ import {
   CircleDollarSign, FileCheck2, Filter, LayoutDashboard, Map, Menu,
   MessageSquareText, MoreHorizontal, Search, ShieldCheck, Sprout, X,
 } from 'lucide-react'
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
 import './App.css'
 
 const demoProjects = [
@@ -27,6 +29,21 @@ const demoWorkspace = {
   rules: [['Unique reporters', 'Count one confirmation per reporter, project, and status.'], ['Threshold', 'A project reaches verified after its configured confirmation count.'], ['Audit flags', 'DELAYED, INCOMPLETE, and PROBLEM reports create an audit flag.'], ['Evidence format', 'Messages must use PROJECT-CODE STATUS, such as BHR-042 DONE.']],
   activity: [['Dashboard data synchronized', 'MajiShwari system', '1 hour ago'], ['WTR-117 marked for audit review', 'Verification engine', '2 hours ago'], ['BHR-042 reached verification threshold', 'Verification engine', '3 hours ago'], ['Daily reconciliation scheduled for 02:00 UTC', 'System scheduler', '4 hours ago']],
 }
+const riskCoordinates: Record<string, [number, number]> = {
+  Turkana: [3.1, 35.6],
+  'Tana River': [-1.5, 39.8],
+  Kitui: [-1.4, 38.0],
+  Makueni: [-2.2, 37.9],
+}
+
+function MapFocus({ county }: { county: string }) {
+  const map = useMap()
+  useEffect(() => {
+    const coordinates = riskCoordinates[county]
+    if (coordinates) map.flyTo(coordinates, 8, { duration: 0.7 })
+  }, [county, map])
+  return null
+}
 
 function App() {
   const [activeNav, setActiveNav] = useState('Overview')
@@ -40,6 +57,7 @@ function App() {
   const [reportMessage, setReportMessage] = useState('')
   const [reportPhone, setReportPhone] = useState('')
   const [workspace, setWorkspace] = useState(demoWorkspace)
+  const [selectedCounty, setSelectedCounty] = useState('Turkana')
 
   useEffect(() => {
     fetch('/api/dashboard')
@@ -103,7 +121,7 @@ function App() {
         </> : <section className="workspace-tab">{activeNav === 'Projects' && <><div className="tab-heading"><div><p className="eyebrow">PORTFOLIO</p><h2>All climate projects</h2><p>Track verification, delivery progress, and funding across counties.</p></div><button className="primary-button" onClick={() => setShowReport(true)}><MessageSquareText size={16} /> Add report</button></div><div className="panel full-table"><div className="table-head"><span>Project</span><span>Confirmations</span><span>Progress</span><span>Status</span><span>Funding</span></div>{projects.map((project) => <div className="project-row" key={project.id}><div className="project-name"><span className={`project-badge ${project.color}`}><Sprout size={15} /></span><div><strong>{project.name}</strong><small>{project.id} · {project.county}</small></div></div><div className="confirmation"><strong>{project.confirmations.split(' / ')[0]}</strong><span> / {project.confirmations.split(' / ')[1]} needed</span></div><div className="progress-wrap"><div className="progress-bar"><span style={{ width: `${project.progress}%` }} /></div><small>{project.progress}%</small></div><span className={`status ${project.status === 'Verified' ? 'verified' : 'review'}`}><span />{project.status}</span><strong className="funding">{project.amount}</strong></div>)}</div></>}
           {activeNav === 'Community reports' && <><div className="tab-heading"><div><p className="eyebrow">COMMUNITY SIGNAL</p><h2>Report inbox</h2><p>Review incoming SMS evidence and audit flags.</p></div><button className="primary-button" onClick={() => setShowReport(true)}><MessageSquareText size={16} /> Log report</button></div><div className="panel report-inbox"><div className="inbox-summary"><strong>{reports.length} recent reports</strong><span>{metrics.reportsNeedingReview} require review</span></div>{reports.map((report) => <div className="report-item report-item-large" key={`${report.message}-${report.time}`}><span className={`report-icon ${report.tone}`}>{report.tone === 'positive' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}</span><div><strong>{report.message}</strong><small>{report.source}</small></div><div className="report-time"><span className={report.tone}>{report.label}</span><small>{report.time}</small></div></div>)}</div></>}
           {activeNav === 'Fund releases' && <><div className="tab-heading"><div><p className="eyebrow">CAPITAL CONTROL</p><h2>Fund releases</h2><p>Milestone-linked disbursements and approval records.</p></div><span className={`data-status ${dataSource}`}>{dataSource === 'neon' ? 'Neon connected' : 'Demo mode'}</span></div><div className="panel release-grid">{workspace.releases.map((release) => <div className="release-card" key={release.projectId}><div className="release-card-top"><span className="project-badge green"><CircleDollarSign size={15} /></span><span className={`status ${release.status === 'Approved' ? 'verified' : 'review'}`}><span />{release.status}</span></div><strong>{release.projectName}</strong><small>{release.projectId} · {release.milestone}</small><div className="release-amount">{release.amount}<span>{release.status === 'Approved' ? 'Ready for release' : 'Awaiting verification'}</span></div></div>)}</div></>}
-          {activeNav === 'Vulnerability map' && <><div className="tab-heading"><div><p className="eyebrow">RISK INTELLIGENCE</p><h2>Vulnerability map</h2><p>County-level climate exposure and project coverage.</p></div><span className={`data-status ${dataSource}`}>{dataSource === 'neon' ? 'Neon connected' : 'Demo mode'}</span></div><div className="map-tab-grid"><div className="panel map-panel-large"><div className="map-visual"><div className="map-river" /><span className="map-label label-one">Turkana <b>82</b></span><span className="map-label label-two">Kitui <b>64</b></span><span className="map-label label-three">Makueni <b>41</b></span><span className="map-label label-four">Tana River <b>73</b></span><div className="map-pin pin-one" /><div className="map-pin pin-two" /><div className="map-pin pin-three" /></div></div><div className="risk-list">{workspace.vulnerability.map(([county, score, label, tone]) => <div className="risk-row" key={county}><div><strong>{county}</strong><small>Climate vulnerability index</small></div><b>{score}</b><span><i className={tone} />{label}</span></div>)}</div></div></>}
+          {activeNav === 'Vulnerability map' && <><div className="tab-heading"><div><p className="eyebrow">RISK INTELLIGENCE</p><h2>Vulnerability map</h2><p>County-level climate exposure and project coverage.</p></div><span className={`data-status ${dataSource}`}>{dataSource === 'neon' ? 'Neon connected' : 'Demo mode'}</span></div><div className="map-tab-grid"><div className="panel map-panel-large"><MapContainer className="leaflet-map" center={[-0.7, 37.8]} zoom={6} scrollWheelZoom><TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><MapFocus county={selectedCounty} />{workspace.vulnerability.map(([county, score, label, tone]) => { const coordinates = riskCoordinates[county]; const color = tone === 'risk-high' ? '#d46d52' : tone === 'risk-mid' ? '#dfa14d' : '#5a9a70'; return <CircleMarker key={county} center={coordinates} radius={Number(score) / 8 + 3} pathOptions={{ color, fillColor: color, fillOpacity: .75, weight: county === selectedCounty ? 4 : 2 }} eventHandlers={{ click: () => setSelectedCounty(county) }}><Popup><strong>{county}</strong><br />Risk score: {score}<br />{label}</Popup></CircleMarker> })}</MapContainer><div className="map-hint">Click a county to focus the map</div></div><div className="risk-list">{workspace.vulnerability.map(([county, score, label, tone]) => <button className={selectedCounty === county ? 'risk-row selected' : 'risk-row'} key={county} onClick={() => setSelectedCounty(county)}><div><strong>{county}</strong><small>Climate vulnerability index</small></div><b>{score}</b><span><i className={tone} />{label}</span></button>)}</div></div></>}
           {activeNav === 'Verification rules' && <><div className="tab-heading"><div><p className="eyebrow">CONTROL PLANE</p><h2>Verification rules</h2><p>Rules applied before a project can move to verified.</p></div><span className={`data-status ${dataSource}`}>{dataSource === 'neon' ? 'Neon connected' : 'Demo mode'}</span></div><div className="rule-list">{workspace.rules.map(([title, detail], index) => <div className="panel rule-card" key={title}><span className="rule-number">0{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div><CheckCircle2 size={18} /></div>)}</div></>}
           {activeNav === 'Activity log' && <><div className="tab-heading"><div><p className="eyebrow">AUDIT TRAIL</p><h2>Activity log</h2><p>Recent system events across the verification workflow.</p></div><span className={`data-status ${dataSource}`}>{dataSource === 'neon' ? 'Neon connected' : 'Demo mode'}</span></div><div className="panel event-list">{workspace.activity.map(([event, detail, age]) => <div className="event-row" key={event}><span className="event-dot" /><div><strong>{event}</strong><small>{age} · {detail}</small></div><ArrowUpRight size={15} /></div>)}</div></>}
         </section>}
