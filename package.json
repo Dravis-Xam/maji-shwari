@@ -4,5 +4,11 @@
   "scripts": {
     "build": "npm install --prefix app && npm run build --prefix app",
     "dev": "npm run dev --prefix app"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2"
   }
 }

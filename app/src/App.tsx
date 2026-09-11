@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Activity, AlertTriangle, ArrowUpRight, Bell, CheckCircle2, ChevronDown,
   CircleDollarSign, FileCheck2, Filter, LayoutDashboard, Map, Menu,
@@ -6,12 +6,12 @@ import {
 } from 'lucide-react'
 import './App.css'
 
-const projects = [
+const demoProjects = [
   { id: 'BHR-042', name: 'Makueni Borehole 042', county: 'Makueni', status: 'Verified', confirmations: '18 / 12', progress: 92, amount: 'KES 4.8M', color: 'green' },
   { id: 'WTR-117', name: 'Tana River Water Pan', county: 'Tana River', status: 'In review', confirmations: '7 / 12', progress: 58, amount: 'KES 7.2M', color: 'amber' },
   { id: 'FRM-089', name: 'Kitui Agroforestry Hub', county: 'Kitui', status: 'Verified', confirmations: '24 / 12', progress: 76, amount: 'KES 3.1M', color: 'green' },
 ]
-const reports = [
+const demoReports = [
   { message: 'BHR-042 DONE', source: 'SMS · +254 712 ••• 381', time: '8 min ago', tone: 'positive', label: 'Confirmed' },
   { message: 'WTR-117 DELAYED', source: 'SMS · +254 728 ••• 104', time: '21 min ago', tone: 'warning', label: 'Audit flag' },
   { message: 'FRM-089 DONE', source: 'SMS · +254 701 ••• 927', time: '34 min ago', tone: 'positive', label: 'Confirmed' },
@@ -21,9 +21,29 @@ function App() {
   const [activeNav, setActiveNav] = useState('Overview')
   const [showReport, setShowReport] = useState(false)
   const [notice, setNotice] = useState('')
-  const handleReport = () => {
+  const [projects, setProjects] = useState(demoProjects)
+  const [reports, setReports] = useState(demoReports)
+  const [reportMessage, setReportMessage] = useState('')
+  const [reportPhone, setReportPhone] = useState('')
+
+  useEffect(() => {
+    fetch('/api/dashboard')
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Dashboard unavailable')))
+      .then((payload) => { setProjects(payload.projects); setReports(payload.reports) })
+      .catch(() => setNotice('Showing demo data while the backend is unavailable.'))
+  }, [])
+
+  const handleReport = async () => {
+    const response = await fetch('/api/reports', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: reportMessage, phone: reportPhone }) })
+    const payload = await response.json()
+    if (!response.ok) {
+      setNotice(payload.error ?? 'Report could not be submitted.')
+      return
+    }
     setShowReport(false)
-    setNotice('Report queued for verification. The community will receive an SMS confirmation.')
+    setReportMessage('')
+    setReportPhone('')
+    setNotice(payload.demo ? 'Report accepted in demo mode. Add DATABASE_URL to persist it in Neon.' : 'Report queued for verification. The community will receive an SMS confirmation.')
     window.setTimeout(() => setNotice(''), 4500)
   }
 
@@ -54,7 +74,7 @@ function App() {
           <div className="panel map-panel"><div className="panel-heading"><div><h2>Vulnerability watch</h2><p>County risk index · live analysis</p></div><button className="filter-button" aria-label="Open map"><ArrowUpRight size={16} /></button></div><div className="map-visual"><div className="map-river" /><span className="map-label label-one">Turkana <b>82</b></span><span className="map-label label-two">Kitui <b>64</b></span><span className="map-label label-three">Makueni <b>41</b></span><span className="map-label label-four">Tana River <b>73</b></span><div className="map-pin pin-one" /><div className="map-pin pin-two" /><div className="map-pin pin-three" /></div><div className="risk-footer"><span><i className="risk-high" /> High risk</span><span><i className="risk-mid" /> Watch</span><span><i className="risk-low" /> Stable</span><button className="text-button">Open map <ArrowUpRight size={14} /></button></div></div></section>
       </div>
     </main>
-    {showReport && <div className="modal-backdrop" onClick={() => setShowReport(false)}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">COMMUNITY INTAKE</p><h2>Log a report</h2></div><button className="close-button" onClick={() => setShowReport(false)}><X size={18} /></button></div><label>Project code<input placeholder="e.g. BOREHOLE123" /></label><label>SMS message<input placeholder="BHR-042 DONE" /></label><label>Source phone number<input placeholder="+254 7•• ••• •••" /></label><div className="modal-actions"><button className="secondary-button" onClick={() => setShowReport(false)}>Cancel</button><button className="primary-button" onClick={handleReport}><CheckCircle2 size={16} /> Queue report</button></div></div></div>}
+    {showReport && <div className="modal-backdrop" onClick={() => setShowReport(false)}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">COMMUNITY INTAKE</p><h2>Log a report</h2></div><button className="close-button" onClick={() => setShowReport(false)}><X size={18} /></button></div><label>SMS message<input value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="BHR-042 DONE" /></label><label>Source phone number<input value={reportPhone} onChange={(event) => setReportPhone(event.target.value)} placeholder="+254 7•• ••• •••" /></label><div className="modal-actions"><button className="secondary-button" onClick={() => setShowReport(false)}>Cancel</button><button className="primary-button" onClick={handleReport}><CheckCircle2 size={16} /> Queue report</button></div></div></div>}
   </div>
 }
 export default App

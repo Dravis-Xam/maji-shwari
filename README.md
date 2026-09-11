@@ -2,7 +2,7 @@
 
 MajiShwari is a prototype dashboard for making local climate-finance projects easier to verify, monitor, and audit. It is based on the requirements in `CLIMATE FINANCE VERIFICATION PLATFORM.pdf`.
 
-The current implementation is a responsive React dashboard for county administrators and donors. It uses realistic local mock data so the main workflows can be demonstrated without cloud accounts, API keys, or blockchain credentials.
+The current implementation is a responsive React dashboard for county administrators and donors, backed by Vercel serverless API routes. It can run in demo mode without cloud credentials, or use Neon PostgreSQL when `DATABASE_URL` is configured.
 
 ## What It Solves
 
@@ -139,6 +139,35 @@ Run the available linter with:
 npm run lint
 ```
 
+## Backend Service
+
+The backend is deployed with the frontend on Vercel:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/health` | Fast service and database health check |
+| `GET /api/dashboard` | Cached dashboard payload for the frontend |
+| `GET /api/reports` | Recent report read endpoint |
+| `POST /api/reports` | Validate, deduplicate, persist, and transition a report |
+| `GET /api/cron/reconcile` | Scheduled stale-flag and project reconciliation |
+
+Configure these Vercel environment variables:
+
+- `DATABASE_URL`: Neon pooled connection string. Without it, reads and report submissions use a non-persistent demo mode.
+- `CRON_SECRET`: optional secret used to protect manual cron calls. Vercel automatically sends it for configured cron jobs when set.
+
+Run [`db/schema.sql`](db/schema.sql) once against the Neon database. The API also performs an idempotent schema check on a cold start, which keeps first deployment simple while the warm-instance promise avoids repeating DDL on every request.
+
+### Low-bandwidth and resilience choices
+
+- Dashboard responses use `s-maxage` and `stale-while-revalidate` so repeated visits do not always hit Neon.
+- The frontend ships as a static Vite bundle and only requests one compact dashboard payload on load.
+- The report endpoint validates before touching the database and uses a unique `(project, reporter, status)` key for idempotent retries.
+- Phone numbers are converted into a short reporter key before storage; raw numbers are not written to the database.
+- Neon uses a pooled serverless driver and cached client/schema promises to reduce connection setup on warm invocations.
+- Read-only dashboard failures return demo data rather than leaving the interface blank. Write failures return `503`, allowing SMS or client retries without pretending the record was saved.
+- Vercel's multi-region runtime and the database's durable storage provide redundancy; production deployments should still use Neon branching/backups and monitor the health endpoint.
+
 ## Data Model To Add
 
 The prototype should be backed by entities similar to these:
@@ -202,4 +231,4 @@ Use a pilot across a small number of counties first. Compare the new process wit
 
 ## Important Prototype Limitations
 
-This repository does not yet include a live FastAPI service, Twilio webhook, Supabase database, Python scoring job, or deployed Polygon contract. The dashboard controls demonstrate the intended experience and state changes, but the data is currently static and browser-local. Those integrations should be implemented behind authenticated APIs before the system is used for real disbursement decisions.
+This repository does not yet include a live Twilio webhook, Python scoring job, or deployed Polygon contract. The Vercel API now handles the core dashboard and report workflow with Neon-ready persistence, but authentication, SMS delivery, rate limiting, queue-backed analytics, and formal release approvals should be added before it is used for real disbursement decisions.
