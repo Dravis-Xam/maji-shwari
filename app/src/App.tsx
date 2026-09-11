@@ -45,11 +45,11 @@ function App() {
     fetch('/api/dashboard')
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('Dashboard unavailable')))
       .then((payload) => { setProjects(payload.projects); setReports(payload.reports); setMetrics(payload.metrics); setDataSource(payload.source) })
-      .catch(() => setNotice('Showing demo data while the backend is unavailable.'))
+      .catch(() => setDataSource('demo'))
     fetch('/api/workspace')
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('Workspace unavailable')))
       .then((payload) => { setWorkspace(payload); setDataSource(payload.source) })
-      .catch(() => setNotice('Showing demo workspace data while the backend is unavailable.'))
+      .catch(() => setDataSource('demo'))
   }, [])
 
   const handleReport = async () => {
