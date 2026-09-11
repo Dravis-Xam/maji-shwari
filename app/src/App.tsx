@@ -54,7 +54,6 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [loginName, setLoginName] = useState('')
-  const [loginRole, setLoginRole] = useState<Role>('community')
   const [actionProject, setActionProject] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [actionAmount, setActionAmount] = useState('')
@@ -92,13 +91,13 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: loginName, role: loginRole }) })
+      const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: loginName }) })
       const payload = await response.json()
       if (!response.ok) return setNotice(payload.error ?? 'Login failed.')
       setUser(payload.user)
       setNotice(`Signed in as ${payload.user.role}.`)
     } catch {
-      setUser({ name: loginName.trim(), role: loginRole })
+      setUser({ name: loginName.trim(), role: 'community' })
       setDataSource('demo')
     }
   }
@@ -117,7 +116,7 @@ function App() {
   }
 
   if (!authChecked) return <div className="auth-screen"><div className="auth-card"><span className="brand-mark"><Sprout size={19} /></span><h1>Loading MajiShwari</h1><p>Checking your secure session...</p></div></div>
-  if (!user) return <div className="auth-screen"><div className="auth-card"><span className="brand-mark"><Sprout size={19} /></span><p className="eyebrow">KENYA CLIMATE DESK</p><h1>Sign in to MajiShwari</h1><p>Use your approved Google account. No separate MajiShwari password is stored.</p><button className="google-button" onClick={() => { window.location.href = '/api/auth/google/start' }}><span>G</span> Continue with Google</button>{import.meta.env.DEV && <details className="dev-login"><summary>Local preview login</summary><input className="auth-input" value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder="Your name" /><select className="auth-input" value={loginRole} onChange={(event) => setLoginRole(event.target.value as Role)}><option value="community">Community member</option><option value="government">Government official</option><option value="donor">Donor</option></select><button className="secondary-button auth-button" disabled={loginName.trim().length < 2} onClick={handleLogin}>Preview locally</button></details>}</div></div>
+  if (!user) return <div className="auth-screen"><div className="auth-card"><span className="brand-mark"><Sprout size={19} /></span><p className="eyebrow">KENYA CLIMATE DESK</p><h1>Sign in to MajiShwari</h1><p>Use your approved Google account. Your role is assigned securely from your approved account.</p><button className="google-button" onClick={() => { window.location.href = '/api/auth/google/start' }}><span>G</span> Continue with Google</button>{import.meta.env.DEV && <details className="dev-login"><summary>Local community preview</summary><input className="auth-input" value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder="Your name" /><button className="secondary-button auth-button" disabled={loginName.trim().length < 2} onClick={handleLogin}>Preview as community</button></details>}</div></div>
 
   const handleReport = async () => {
     setIsSubmitting(true)

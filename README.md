@@ -178,14 +178,14 @@ The cron is scheduled for `02:00 UTC` with `0 2 * * *`. This once-daily frequenc
 | Submit community progress reports | Yes | Yes | Yes |
 | Change project lifecycle state | Project owner | Government oversight | No |
 
-Project state transitions are validated server-side: `Draft -> Submitted -> In progress -> Completed`. Invalid jumps are rejected, and each accepted transition is recorded in the activity log. In local Vite development, the login screen supports a demo session because Vercel API functions are not executed by the Vite dev server; deployed Vercel sessions are signed and enforced by the API.
+Project state transitions are validated server-side: `Draft -> Submitted -> In progress -> Completed`. Invalid jumps are rejected, and each accepted transition is recorded in the activity log. In local Vite development, the login screen supports a fixed community-only preview because Vercel API functions are not executed by the Vite dev server; deployed Vercel sessions are signed and enforced by the API.
 
 ### Google OAuth setup
 
 1. In Google Cloud Console, create an OAuth 2.0 **Web application** client.
 2. Add the exact Vercel callback URL from `GOOGLE_REDIRECT_URI` to **Authorized redirect URIs**, for example `https://your-domain.vercel.app/api/auth/google`.
 3. Add the client ID, client secret, `JWT_SECRET`, and role allowlists to Vercel project environment variables for Production and Preview as appropriate.
-4. Use the Google account allowlists to assign roles. Do not let the browser submit a production role.
+4. Use the Google account allowlists to assign roles. The browser never submits or chooses a production role.
 5. Deploy and test `/api/health`, then sign in through the Google button.
 
 No MajiShwari password is collected or stored. Google handles identity verification, the callback validates the authorization code and verified email, and the app stores only an encrypted-by-signature, HttpOnly session cookie. Rotate any credentials that have been exposed outside Vercel's secret environment settings.
