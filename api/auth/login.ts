@@ -11,6 +11,6 @@ export default async function handler(request: Request) {
   const name = String(body.name ?? '').trim().slice(0, 80)
   if (name.length < 2) return json({ error: 'Name is required.' }, { status: 422 })
   const role = 'community' as const
-  const token = await createSession({ sub: `${role}:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name, email: 'local-preview@local.invalid', role })
+  const token = await createSession({ sub: `local:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name, email: 'local-preview@local.invalid', role })
   return json({ user: { name, role } }, { headers: { 'set-cookie': sessionCookie(token), 'cache-control': 'no-store' } })
 }
