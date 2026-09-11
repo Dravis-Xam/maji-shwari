@@ -1,0 +1,8 @@
+{
+  "name": "maji-shwari-deployment",
+  "private": true,
+  "scripts": {
+    "build": "npm install --prefix app && npm run build --prefix app",
+    "dev": "npm run dev --prefix app"
+  }
+}
