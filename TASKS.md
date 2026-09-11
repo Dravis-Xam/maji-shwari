@@ -13,7 +13,7 @@ Tasks extracted from `CLIMATE FINANCE VERIFICATION PLATFORM.pdf` and executed in
 - [x] Add Vercel API routes for health, dashboard reads, and report writes.
 - [x] Add Neon/PostgreSQL schema, duplicate-safe report persistence, and verification state transitions.
 - [x] Add cached dashboard responses, warm connection/schema reuse, and demo fallback reads.
-- [x] Add an hourly Vercel cron for stale audit and project reconciliation.
+- [x] Add a Hobby-compatible daily Vercel cron for stale audit and project reconciliation.
 - [x] Wire the frontend report intake and dashboard loading to the backend service.
 
 Run from `app/` with:

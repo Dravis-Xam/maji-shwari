@@ -149,12 +149,14 @@ The backend is deployed with the frontend on Vercel:
 | `GET /api/dashboard` | Cached dashboard payload for the frontend |
 | `GET /api/reports` | Recent report read endpoint |
 | `POST /api/reports` | Validate, deduplicate, persist, and transition a report |
-| `GET /api/cron/reconcile` | Scheduled stale-flag and project reconciliation |
+| `GET /api/cron/reconcile` | Daily stale-flag and project reconciliation |
 
 Configure these Vercel environment variables:
 
 - `DATABASE_URL`: Neon pooled connection string. Without it, reads and report submissions use a non-persistent demo mode.
 - `CRON_SECRET`: optional secret used to protect manual cron calls. Vercel automatically sends it for configured cron jobs when set.
+
+The cron is scheduled for `02:00 UTC` with `0 2 * * *`. This once-daily frequency is compatible with Vercel Hobby plans. Hobby timing is approximate, so the job may run any time during the scheduled hour; it must not be used as an exact-time payment trigger.
 
 Run [`db/schema.sql`](db/schema.sql) once against the Neon database. The API also performs an idempotent schema check on a cold start, which keeps first deployment simple while the warm-instance promise avoids repeating DDL on every request.
 
