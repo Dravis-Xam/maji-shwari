@@ -36,7 +36,7 @@ const riskCoordinates: Record<string, [number, number]> = {
   Makueni: [-2.2, 37.9],
 }
 type Role = 'community' | 'government' | 'donor'
-type User = { name: string; role: Role }
+type User = { name: string; email?: string; role: Role | 'pending' }
 
 function MapFocus({ county }: { county: string }) {
   const map = useMap()
@@ -53,6 +53,10 @@ function App() {
   const [actionKind, setActionKind] = useState<'project' | 'request' | 'rod' | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+  const [availableRoles, setAvailableRoles] = useState<Role[]>([])
+  const [selectedRole, setSelectedRole] = useState<Role | ''>('')
+  const [showCreatePrompt, setShowCreatePrompt] = useState(false)
+  const [tourStep, setTourStep] = useState<number | null>(null)
   const [loginName, setLoginName] = useState('')
   const [actionProject, setActionProject] = useState('')
   const [actionMessage, setActionMessage] = useState('')
@@ -74,11 +78,11 @@ function App() {
   const [selectedCounty, setSelectedCounty] = useState('Turkana')
 
   useEffect(() => {
-    fetch('/api/auth/me').then((response) => response.ok ? response.json() : Promise.reject()).then((payload) => setUser(payload.user)).catch(() => setUser(null)).finally(() => setAuthChecked(true))
+    fetch('/api/auth/me').then((response) => response.ok ? response.json() : Promise.reject()).then((payload) => { setUser(payload.user); setAvailableRoles(payload.availableRoles ?? []) }).catch(() => setUser(null)).finally(() => setAuthChecked(true))
   }, [])
 
   useEffect(() => {
-    if (!user) return
+    if (!user || user.role === 'pending') return
     fetch('/api/dashboard')
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('Dashboard unavailable')))
       .then((payload) => { setProjects(payload.projects); setReports(payload.reports); setMetrics(payload.metrics); setDataSource(payload.source) })
@@ -89,16 +93,27 @@ function App() {
       .catch(() => setDataSource('demo'))
   }, [user])
 
+  const finishRoleOnboarding = async () => {
+    if (!selectedRole) return
+    const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'role', role: selectedRole }) })
+    const payload = await response.json()
+    if (!response.ok) return setNotice(payload.error ?? 'That role is not available for this account.')
+    setUser(payload.user)
+    setShowCreatePrompt(true)
+  }
+
   const handleLogin = async () => {
     try {
       const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: loginName }) })
       const payload = await response.json()
       if (!response.ok) return setNotice(payload.error ?? 'Login failed.')
       setUser(payload.user)
+      setShowCreatePrompt(true)
       setNotice(`Signed in as ${payload.user.role}.`)
     } catch {
       setUser({ name: loginName.trim(), role: 'community' })
       setDataSource('demo')
+      setShowCreatePrompt(true)
     }
   }
 
@@ -117,6 +132,7 @@ function App() {
 
   if (!authChecked) return <div className="auth-screen"><div className="auth-card"><span className="brand-mark"><Sprout size={19} /></span><h1>Loading MajiShwari</h1><p>Checking your secure session...</p></div></div>
   if (!user) return <div className="auth-screen"><div className="auth-card"><span className="brand-mark"><Sprout size={19} /></span><p className="eyebrow">KENYA CLIMATE DESK</p><h1>Sign in to MajiShwari</h1><p>Use your approved Google account. No separate MajiShwari password is stored.</p><button className="google-button" onClick={() => { window.location.href = '/api/auth/google?start=1' }}><span>G</span> Continue with Google</button>{import.meta.env.DEV && <details className="dev-login"><summary>Local preview login</summary><p>Local preview uses a fixed community role. Production roles come from Google allowlists.</p><input className="auth-input" value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder="Your name" /><button className="secondary-button auth-button" disabled={loginName.trim().length < 2} onClick={handleLogin}>Preview locally</button></details>}</div></div>
+  if (user.role === 'pending') return <div className="auth-screen"><div className="auth-card"><span className="brand-mark"><Sprout size={19} /></span><p className="eyebrow">WELCOME TO MAJISHWARI</p><h1>Choose your workspace</h1><p>Your Google account is verified. Choose an approved role to continue.</p><div className="role-options">{availableRoles.map((role) => <button className={selectedRole === role ? 'role-option selected' : 'role-option'} key={role} onClick={() => setSelectedRole(role)}><strong>{role === 'community' ? 'Community member' : role === 'government' ? 'Government official' : 'Donor'}</strong><small>{role === 'community' ? 'Create and report on local projects.' : role === 'government' ? 'Oversee county delivery and funding.' : 'Fund projects and send RODs.'}</small></button>)}</div>{availableRoles.length === 0 && <p className="auth-error">No role is approved for {user.email}. Contact the platform administrator.</p>}<button className="primary-button auth-button" disabled={!selectedRole} onClick={finishRoleOnboarding}>Continue to dashboard</button></div></div>
 
   const handleReport = async () => {
     setIsSubmitting(true)
@@ -182,6 +198,8 @@ function App() {
         </section>}
       </div>
     </main>
+    {showCreatePrompt && <div className="modal-backdrop"><div className="onboarding-card"><span className="brand-mark"><Sprout size={19} /></span><p className="eyebrow">FIRST STEPS</p><h2>Start with a project?</h2><p>Would you like to create a project now, or explore your dashboard first?</p><div className="modal-actions"><button className="secondary-button" onClick={() => { setShowCreatePrompt(false); setTourStep(0) }}>Open dashboard</button>{user.role !== 'donor' && <button className="primary-button" onClick={() => { setShowCreatePrompt(false); setActionKind('project') }}>Create project</button>}</div></div></div>}
+    {tourStep !== null && <div className="tour-backdrop"><div className="tour-card"><span className="tour-step">{tourStep + 1} / 3</span><p className="eyebrow">{user.role.toUpperCase()} TOUR</p><h2>{(user.role === 'donor' ? ['Discover projects', 'Send a ROD', 'Track releases'] : user.role === 'government' ? ['Oversee delivery', 'Review alerts', 'Protect funding'] : ['Create a project', 'Share progress', 'Request funding'])[tourStep]}</h2><p>{(user.role === 'donor' ? ['Browse verified community projects and their progress.', 'Send a request to donate to a project from Fund releases.', 'Monitor utilization, reports, and audit activity.'] : user.role === 'government' ? ['Review every project and lifecycle state across your county.', 'Use Community reports to catch delays and fraud signals early.', 'Review milestone evidence before funding moves forward.'] : ['Submit a plan, artifacts, and contact details for validation.', 'Send SMS-style reports so independent confirmations build trust.', 'Ask donors to fund a project with its plan and evidence.'])[tourStep]}</p><div className="tour-actions"><button className="text-button" onClick={() => setTourStep(null)}>Skip tour</button><button className="primary-button" onClick={() => tourStep === 2 ? setTourStep(null) : setTourStep(tourStep + 1)}>{tourStep === 2 ? 'Finish' : 'Next'}</button></div></div></div>}
     {showReport && <div className="modal-backdrop" onClick={() => setShowReport(false)}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">COMMUNITY INTAKE</p><h2>Log a report</h2></div><button className="close-button" onClick={() => setShowReport(false)}><X size={18} /></button></div><p className="modal-help">Use a project code and status, for example <strong>BHR-042 DONE</strong> or <strong>WTR-117 DELAYED</strong>.</p><label>SMS message<input value={reportMessage} onChange={(event) => setReportMessage(event.target.value)} placeholder="BHR-042 DONE" /></label><label>Source phone number<input value={reportPhone} onChange={(event) => setReportPhone(event.target.value)} placeholder="+254 7•• ••• •••" /></label><div className="modal-actions"><button className="secondary-button" onClick={() => setShowReport(false)}>Cancel</button><button className="primary-button" disabled={isSubmitting || !reportMessage || !reportPhone} onClick={handleReport}>{isSubmitting ? 'Submitting...' : <><CheckCircle2 size={16} /> Queue report</>}</button></div></div></div>}
     {actionKind && <div className="modal-backdrop" onClick={() => setActionKind(null)}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">{actionKind === 'project' ? 'PROJECT INTAKE' : actionKind === 'rod' ? 'DONOR COMMITMENT' : 'FUNDING REQUEST'}</p><h2>{actionKind === 'project' ? 'Create a project' : actionKind === 'rod' ? 'Send request to donate' : 'Request donor funding'}</h2></div><button className="close-button" onClick={() => setActionKind(null)}><X size={18} /></button></div>{actionKind === 'project' ? <><label>Project code<input value={actionProject} onChange={(event) => setActionProject(event.target.value)} placeholder="BHR-123" /></label><label>Project name<input value={actionName} onChange={(event) => setActionName(event.target.value)} placeholder="Community solar borehole" /></label><label>County<input value={actionCounty} onChange={(event) => setActionCounty(event.target.value)} placeholder="Makueni" /></label><label>Project plan<textarea value={actionPlan} onChange={(event) => setActionPlan(event.target.value)} placeholder="Describe milestones, outcomes, and delivery plan." /></label><label>Artifacts and contact<input value={actionArtifacts} onChange={(event) => setActionArtifacts(event.target.value)} placeholder="Artifact links or references" /><input value={actionContact} onChange={(event) => setActionContact(event.target.value)} placeholder="Contact phone or email" /></label></> : <><label>Project code<input value={actionProject} onChange={(event) => setActionProject(event.target.value)} placeholder="BHR-042" /></label><label>Message<textarea value={actionMessage} onChange={(event) => setActionMessage(event.target.value)} placeholder={actionKind === 'rod' ? 'Describe your funding commitment.' : 'Describe the funding need and milestone.'} /></label><label>Amount in KES<input type="number" min="0" value={actionAmount} onChange={(event) => setActionAmount(event.target.value)} placeholder="250000" /></label></>}<div className="modal-actions"><button className="secondary-button" onClick={() => setActionKind(null)}>Cancel</button><button className="primary-button" onClick={handleAction}>Submit securely</button></div></div></div>}
   </div>

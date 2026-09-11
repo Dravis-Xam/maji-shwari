@@ -1,6 +1,7 @@
 export type Role = 'community' | 'government' | 'donor'
 export type Session = { sub: string; name: string; email: string; role: Role }
 const COOKIE = 'maji_session'
+const PENDING_COOKIE = 'maji_pending'
 const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
 
 function secret() {
@@ -37,6 +38,28 @@ async function verifyJwt(token: string) {
 
 export async function createSignedState(origin: string) {
   return signJwt({ origin }, 10 * 60)
+}
+
+export async function createPendingSession(session: Omit<Session, 'role'>) {
+  return signJwt({ ...session, pending: true }, 10 * 60)
+}
+
+export async function readPendingSession(request: Request): Promise<Omit<Session, 'role'> | null> {
+  const token = request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${PENDING_COOKIE}=`))?.slice(PENDING_COOKIE.length + 1)
+  if (!token) return null
+  try {
+    const payload = await verifyJwt(token)
+    if (payload.pending !== true) return null
+    return { sub: String(payload.sub), name: String(payload.name), email: String(payload.email) }
+  } catch { return null }
+}
+
+export function pendingCookie(token: string) {
+  return `${PENDING_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${env.NODE_ENV === 'production' ? '; Secure' : ''}`
+}
+
+export function clearPendingCookie() {
+  return `${PENDING_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
 }
 
 export async function verifySignedState(token: string) {
@@ -76,6 +99,12 @@ export function googleRole(email: string): Role | null {
   if (list('GOOGLE_DONOR_EMAILS').includes(normalized)) return 'donor'
   if (list('GOOGLE_COMMUNITY_EMAILS').includes(normalized)) return 'community'
   return null
+}
+
+export function googleRoles(email: string): Role[] {
+  const normalized = email.toLowerCase()
+  const list = (key: string) => (env[key] ?? '').split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
+  return (['community', 'government', 'donor'] as Role[]).filter((role) => list(`GOOGLE_${role.toUpperCase()}_EMAILS`).includes(normalized))
 }
 
 export async function requireSession(request: Request) {

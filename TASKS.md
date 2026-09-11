@@ -20,6 +20,8 @@ Tasks extracted from `CLIMATE FINANCE VERIFICATION PLATFORM.pdf` and executed in
 - [x] Add signed role sessions and server-side role authorization.
 - [x] Add project creation, donor funding requests, donor RODs, and lifecycle validation.
 - [x] Refresh report and project state changes in the dashboard UI.
+- [x] Add approved-role onboarding after Google OAuth.
+- [x] Add first-login project prompt and role-specific interface tour.
 
 Run from `app/` with:
 

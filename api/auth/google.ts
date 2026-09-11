@@ -1,4 +1,4 @@
-import { createSession, googleRole, sessionCookie } from '../_lib/auth'
+import { createPendingSession, pendingCookie } from '../_lib/auth'
 import { json } from '../_lib/http'
 import { verifySignedState, createSignedState } from '../_lib/auth'
 
@@ -22,10 +22,8 @@ export default async function handler(request: Request) {
     if (!profileResponse.ok) return json({ error: 'Google profile lookup failed.' }, { status: 401 })
     const profile = await profileResponse.json() as { sub?: string; name?: string; email?: string; email_verified?: boolean }
     if (!profile.sub || !profile.email || profile.email_verified !== true) return json({ error: 'A verified Google email is required.' }, { status: 403 })
-    const role = googleRole(profile.email)
-    if (!role) return json({ error: 'Your Google account is not approved for a MajiShwari role.' }, { status: 403 })
-    const token = await createSession({ sub: `google:${profile.sub}`, name: profile.name || profile.email, email: profile.email, role })
-    return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': sessionCookie(token), 'cache-control': 'no-store' } })
+    const token = await createPendingSession({ sub: `google:${profile.sub}`, name: profile.name || profile.email, email: profile.email })
+    return new Response(null, { status: 302, headers: { location: '/?onboarding=role', 'set-cookie': pendingCookie(token), 'cache-control': 'no-store' } })
   } catch (error) {
     console.error('google_oauth_failed', error)
     return json({ error: 'Google sign-in could not be completed.' }, { status: 503 })

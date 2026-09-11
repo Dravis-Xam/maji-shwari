@@ -180,6 +180,8 @@ The cron is scheduled for `02:00 UTC` with `0 2 * * *`. This once-daily frequenc
 
 Project state transitions are validated server-side: `Draft -> Submitted -> In progress -> Completed`. Invalid jumps are rejected, and each accepted transition is recorded in the activity log. In local Vite development, the login screen supports a demo session because Vercel API functions are not executed by the Vite dev server; deployed Vercel sessions are signed and enforced by the API.
 
+After Google verifies identity, the app opens a role onboarding screen. It displays only roles whose server-side allowlist contains the signed-in Google email. The selected approved role is exchanged for the real session, then the user sees a first-login choice to create a project or open the dashboard. A three-step tour follows with content tailored to community, government, or donor workflows. A role cannot be granted merely by changing browser data or posting an unapproved role to the API.
+
 ### Google OAuth setup
 
 1. In Google Cloud Console, create an OAuth 2.0 **Web application** client.
