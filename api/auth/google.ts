@@ -1,9 +1,8 @@
 import { createSession, googleRole, sessionCookie } from '../_lib/auth'
 import { json } from '../_lib/http'
-import { jwtVerify, SignJWT } from 'jose'
+import { verifySignedState, createSignedState } from '../_lib/auth'
 
 const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
-const stateSecret = () => new TextEncoder().encode(env.JWT_SECRET || 'local-development-secret-change-me')
 
 export default async function handler(request: Request) {
   const url = new URL(request.url)
@@ -14,7 +13,7 @@ export default async function handler(request: Request) {
   if (!state) return json({ error: 'OAuth state is required.' }, { status: 400 })
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_REDIRECT_URI) return json({ error: 'Google OAuth is not configured.' }, { status: 503 })
   try {
-    await jwtVerify(state, stateSecret())
+    await verifySignedState(state)
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: env.GOOGLE_REDIRECT_URI, grant_type: 'authorization_code' }) })
     if (!tokenResponse.ok) return json({ error: 'Google token exchange failed.' }, { status: 401 })
     const tokens = await tokenResponse.json() as { access_token?: string; id_token?: string }
@@ -35,7 +34,7 @@ export default async function handler(request: Request) {
 
 async function startGoogle(request: Request) {
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI || !env.JWT_SECRET) return json({ error: 'Google OAuth is not configured.' }, { status: 503 })
-  const state = await new SignJWT({ origin: new URL(request.url).origin }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('10m').sign(stateSecret())
+  const state = await createSignedState(new URL(request.url).origin)
   const params = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: env.GOOGLE_REDIRECT_URI, response_type: 'code', scope: 'openid email profile', access_type: 'online', state })
   return Response.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, 302)
 }

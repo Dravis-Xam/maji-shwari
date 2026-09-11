@@ -1,5 +1,3 @@
-import { jwtVerify, SignJWT } from 'jose'
-
 export type Role = 'community' | 'government' | 'donor'
 export type Session = { sub: string; name: string; email: string; role: Role }
 const COOKIE = 'maji_session'
@@ -10,15 +8,50 @@ function secret() {
   return new TextEncoder().encode(env.JWT_SECRET || 'local-development-secret-change-me')
 }
 
+function encode(value: string) {
+  return btoa(value).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+}
+
+function decode(value: string) {
+  return atob(value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4))
+}
+
+async function signJwt(payload: Record<string, unknown>, lifetimeSeconds: number) {
+  const header = encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+  const body = encode(JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + lifetimeSeconds }))
+  const data = new TextEncoder().encode(`${header}.${body}`)
+  const key = await crypto.subtle.importKey('raw', secret(), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const signature = encode(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', key, data))))
+  return `${header}.${body}.${signature}`
+}
+
+async function verifyJwt(token: string) {
+  const [header, body, signature] = token.split('.')
+  if (!header || !body || !signature) throw new Error('Malformed token')
+  const key = await crypto.subtle.importKey('raw', secret(), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify'])
+  const valid = await crypto.subtle.verify('HMAC', key, Uint8Array.from(decode(signature), (character) => character.charCodeAt(0)), new TextEncoder().encode(`${header}.${body}`))
+  const payload = JSON.parse(decode(body)) as Record<string, unknown>
+  if (!valid || Number(payload.exp) < Math.floor(Date.now() / 1000)) throw new Error('Invalid token')
+  return payload
+}
+
+export async function createSignedState(origin: string) {
+  return signJwt({ origin }, 10 * 60)
+}
+
+export async function verifySignedState(token: string) {
+  return verifyJwt(token)
+}
+
 export async function createSession(session: Session) {
-  return new SignJWT(session).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime('8h').sign(secret())
+  return signJwt(session, 8 * 60 * 60)
 }
 
 export async function readSession(request: Request): Promise<Session | null> {
   const token = request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1)
   if (!token) return null
   try {
-    const { payload } = await jwtVerify(token, secret())
+    const payload = await verifyJwt(token)
     if (payload.role !== 'community' && payload.role !== 'government' && payload.role !== 'donor') return null
     return { sub: String(payload.sub), name: String(payload.name), email: String(payload.email), role: payload.role }
   } catch { return null }
