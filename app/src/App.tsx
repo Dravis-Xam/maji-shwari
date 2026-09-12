@@ -260,7 +260,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!user || user.role === 'pending') return
+    if (!user || user.role === 'pending' || user.role === 'verifying') return
     fetch('/api/dashboard')
       .then((response) =>
         response.ok ? response.json() : Promise.reject(new Error('Dashboard unavailable')),
