@@ -29,3 +29,27 @@ Run from `app/` with:
 npm run dev
 npm run build
 ```
+
+## Up next (not started)
+
+- [ ] Add a Solidity smart contract for the audit ledger, run in a Hardhat
+      environment set up via Polygon's dApp Launchpad, with Ethernal wired up
+      as a local block explorer for indexed transactions during development.
+      Covers: scaffolding `smart-contracts/` with Hardhat + tests/deploy
+      scripts, local-chain deployment via `dapp-launchpad dev`, an Ethernal
+      account/workspace for the local explorer, and a production deploy path
+      (`dapp-launchpad deploy -n <CHAIN-NAME>`) to an EVM-compatible chain.
+      This is the "Audit ledger" layer from the production architecture table
+      in the README (currently marked "not yet").
+- [ ] Add a real USSD channel for community reports using Twilio on the
+      Safaricom network, replacing the SMS-format report intake's manual
+      typing with a menu-driven USSD session (dial a short code, select
+      project/status from a menu, get an immediate on-screen confirmation
+      instead of waiting for an SMS receipt). Covers: a Twilio USSD/Programmable
+      Messaging webhook endpoint, session-state handling across USSD menu
+      steps, mapping USSD input to the existing report validation pipeline
+      (`projects` lookup, duplicate check, unique confirmation count,
+      threshold/audit-flag logic already in `_lib/db.ts`), and Safaricom
+      short-code provisioning through Twilio. This is the "Community channel"
+      layer from the production architecture table in the README (currently
+      marked "not yet" / SMS-only).
