@@ -281,6 +281,13 @@ function buildSearchIndex(
   return items
 }
 
+function greetingForHour(hour: number) {
+  if (hour < 5) return 'Good night'
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
 function MapFocus({ county }: { county: string }) {
   const map = useMap()
   useEffect(() => {
@@ -965,7 +972,9 @@ function App() {
                   {dataSource === 'neon' ? 'Neon connected' : 'Demo mode'}
                 </span>
               </p>
-              <h1>Good morning, {user.name.split(' ')[0]}</h1>
+              <h1>
+                {greetingForHour(new Date().getHours())}, {user.name.split(' ')[0]}
+              </h1>
               <p className="subheading">
                 {user.role === 'donor'
                   ? 'Review trusted projects and direct capital where it matters.'
