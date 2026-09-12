@@ -2,7 +2,9 @@ import { neon } from '@neondatabase/serverless'
 
 let sqlClient: ReturnType<typeof neon> | undefined
 let schemaPromise: Promise<void> | undefined
-const environment = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
+const environment =
+  (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } })
+    .process?.env ?? {}
 
 export function hasDatabase() {
   return Boolean(environment.DATABASE_URL)

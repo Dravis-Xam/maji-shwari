@@ -6,7 +6,10 @@ export function json(data: unknown, init: ResponseInit = {}) {
 }
 
 export function methodNotAllowed(methods: string[]) {
-  return json({ error: 'Method not allowed' }, { status: 405, headers: { allow: methods.join(', ') } })
+  return json(
+    { error: 'Method not allowed' },
+    { status: 405, headers: { allow: methods.join(', ') } },
+  )
 }
 
 export function cacheHeaders(maxAge = 30) {
