@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -201,6 +201,86 @@ const tourStepsByRole: Record<Role, TourStepConfig[]> = {
   ],
 }
 
+type SearchResultItem = {
+  id: string
+  category: 'Project' | 'Report' | 'Fund release' | 'Vulnerability' | 'Rule' | 'Activity'
+  title: string
+  subtitle: string
+  navTarget: string
+  countyFocus?: string
+}
+
+function buildSearchIndex(
+  projects: typeof demoProjects,
+  reports: typeof demoReports,
+  workspace: typeof demoWorkspace,
+): SearchResultItem[] {
+  const items: SearchResultItem[] = []
+
+  for (const project of projects) {
+    items.push({
+      id: `project-${project.id}`,
+      category: 'Project',
+      title: project.name,
+      subtitle: `${project.id} · ${project.county} · ${project.status}`,
+      navTarget: 'Projects',
+    })
+  }
+
+  for (const report of reports) {
+    items.push({
+      id: `report-${report.message}-${report.time}`,
+      category: 'Report',
+      title: report.message,
+      subtitle: `${report.source} · ${report.label}`,
+      navTarget: 'Community reports',
+    })
+  }
+
+  for (const release of workspace.releases) {
+    items.push({
+      id: `release-${release.projectId}`,
+      category: 'Fund release',
+      title: release.projectName,
+      subtitle: `${release.projectId} · ${release.status} · ${release.amount}`,
+      navTarget: 'Fund releases',
+    })
+  }
+
+  for (const [county, score, label] of workspace.vulnerability) {
+    items.push({
+      id: `vulnerability-${county}`,
+      category: 'Vulnerability',
+      title: `${county} — ${label}`,
+      subtitle: `Risk score ${score}`,
+      navTarget: 'Vulnerability map',
+      countyFocus: county,
+    })
+  }
+
+  for (const [title, detail] of workspace.rules) {
+    items.push({
+      id: `rule-${title}`,
+      category: 'Rule',
+      title,
+      subtitle: detail,
+      navTarget: 'Verification rules',
+    })
+  }
+
+  for (const [event, detail, age] of workspace.activity) {
+    items.push({
+      id: `activity-${event}`,
+      category: 'Activity',
+      title: event,
+      subtitle: `${age} · ${detail}`,
+      navTarget: 'Activity log',
+    })
+  }
+
+  return items
+}
+
 function MapFocus({ county }: { county: string }) {
   const map = useMap()
   useEffect(() => {
@@ -247,6 +327,18 @@ function App() {
     width: number
     height: number
   } | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchRefreshing, setSearchRefreshing] = useState(false)
+  const [searchHighlightRect, setSearchHighlightRect] = useState<{
+    top: number
+    left: number
+    width: number
+    height: number
+  } | null>(null)
+  const lastSearchFetchRef = useRef(0)
+  const searchAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -282,6 +374,86 @@ function App() {
       })
       .catch(() => setDataSource('demo'))
   }, [user])
+
+  // Debounce: wait for the user to pause typing before doing any matching or fetching.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(searchQuery.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+
+  // Throttle: once the user is actively searching, refresh from the live API at most
+  // once every few seconds, cancelling any refresh still in flight when a newer one
+  // starts. Local (cached) results from state below already update instantly.
+  useEffect(() => {
+    if (!debouncedQuery || !user || user.role === 'pending' || user.role === 'verifying') return
+
+    const minIntervalMs = 4000
+    const elapsed = Date.now() - lastSearchFetchRef.current
+    const delay = Math.max(0, minIntervalMs - elapsed)
+
+    const timer = window.setTimeout(() => {
+      lastSearchFetchRef.current = Date.now()
+      searchAbortRef.current?.abort()
+      const controller = new AbortController()
+      searchAbortRef.current = controller
+      setSearchRefreshing(true)
+
+      Promise.all([
+        fetch('/api/dashboard', { signal: controller.signal })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
+        fetch('/api/workspace', { signal: controller.signal })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
+      ])
+        .then(([dashboard, workspacePayload]) => {
+          if (dashboard) {
+            setProjects(dashboard.projects)
+            setReports(dashboard.reports)
+            setMetrics(dashboard.metrics)
+          }
+          if (workspacePayload) setWorkspace(workspacePayload)
+        })
+        .finally(() => setSearchRefreshing(false))
+    }, delay)
+
+    return () => window.clearTimeout(timer)
+  }, [debouncedQuery, user])
+
+  useEffect(() => {
+    return () => searchAbortRef.current?.abort()
+  }, [])
+
+  const searchResults = useMemo(() => {
+    if (!debouncedQuery) return []
+    const needle = debouncedQuery.toLowerCase()
+    return buildSearchIndex(projects, reports, workspace)
+      .filter((item) =>
+        `${item.title} ${item.subtitle} ${item.category}`.toLowerCase().includes(needle),
+      )
+      .slice(0, 8)
+  }, [debouncedQuery, projects, reports, workspace])
+
+  const handleSelectSearchResult = (result: SearchResultItem) => {
+    setActiveNav(result.navTarget)
+    if (result.countyFocus) setSelectedCounty(result.countyFocus)
+    setSearchQuery('')
+    setSearchOpen(false)
+
+    window.setTimeout(() => {
+      const element = document.querySelector(`[data-search-id="${result.id}"]`)
+      if (!element) return
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const bounds = element.getBoundingClientRect()
+      setSearchHighlightRect({
+        top: bounds.top,
+        left: bounds.left,
+        width: bounds.width,
+        height: bounds.height,
+      })
+      window.setTimeout(() => setSearchHighlightRect(null), 2200)
+    }, 80)
+  }
 
   useEffect(() => {
     if (tourStep === null || !user || user.role === 'pending' || user.role === 'verifying') {
@@ -684,9 +856,98 @@ function App() {
             <strong>{activeNav}</strong>
           </div>
           <div className="top-actions">
-            <div className="search">
+            <div className="search" style={{ position: 'relative' }}>
               <Search size={16} />
-              <input placeholder="Search projects, reports..." />
+              <input
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value)
+                  setSearchOpen(true)
+                }}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setSearchQuery('')
+                    setSearchOpen(false)
+                  }
+                }}
+                placeholder="Search projects, reports..."
+              />
+              {searchOpen && debouncedQuery && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    left: 0,
+                    width: 340,
+                    maxHeight: 360,
+                    overflowY: 'auto',
+                    background: '#fffaf3',
+                    border: '1px solid rgba(15, 23, 20, 0.12)',
+                    borderRadius: 12,
+                    boxShadow: '0 12px 32px rgba(15, 23, 20, 0.18)',
+                    zIndex: 80,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '10px 14px',
+                      fontSize: 12,
+                      color: 'rgba(15, 23, 20, 0.55)',
+                      borderBottom: '1px solid rgba(15, 23, 20, 0.08)',
+                    }}
+                  >
+                    <span>
+                      {searchResults.length} result{searchResults.length === 1 ? '' : 's'}
+                    </span>
+                    <span>{searchRefreshing ? 'Refreshing…' : 'Live'}</span>
+                  </div>
+                  {searchResults.length === 0 ? (
+                    <div
+                      style={{ padding: '18px 14px', fontSize: 13, color: 'rgba(15, 23, 20, 0.6)' }}
+                    >
+                      No matches for “{debouncedQuery}”.
+                    </div>
+                  ) : (
+                    searchResults.map((result) => (
+                      <button
+                        key={result.id}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleSelectSearchResult(result)}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '10px 14px',
+                          background: 'transparent',
+                          border: 'none',
+                          borderBottom: '1px solid rgba(15, 23, 20, 0.06)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            textTransform: 'uppercase',
+                            letterSpacing: 0.4,
+                            color: '#5a9a70',
+                          }}
+                        >
+                          {result.category}
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{result.title}</div>
+                        <div style={{ fontSize: 12, color: 'rgba(15, 23, 20, 0.6)' }}>
+                          {result.subtitle}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
             <button className="icon-button" aria-label="Notifications">
               <Bell size={18} />
@@ -1019,7 +1280,11 @@ function App() {
                       <span>Funding</span>
                     </div>
                     {projects.map((project) => (
-                      <div className="project-row" key={project.id}>
+                      <div
+                        className="project-row"
+                        data-search-id={`project-${project.id}`}
+                        key={project.id}
+                      >
                         <div className="project-name">
                           <span className={`project-badge ${project.color}`}>
                             <Sprout size={15} />
@@ -1073,6 +1338,7 @@ function App() {
                     {reports.map((report) => (
                       <div
                         className="report-item report-item-large"
+                        data-search-id={`report-${report.message}-${report.time}`}
                         key={`${report.message}-${report.time}`}
                       >
                         <span className={`report-icon ${report.tone}`}>
@@ -1128,7 +1394,11 @@ function App() {
                   </div>
                   <div className="panel release-grid">
                     {workspace.releases.map((release) => (
-                      <div className="release-card" key={release.projectId}>
+                      <div
+                        className="release-card"
+                        data-search-id={`release-${release.projectId}`}
+                        key={release.projectId}
+                      >
                         <div className="release-card-top">
                           <span className="project-badge green">
                             <CircleDollarSign size={15} />
@@ -1220,6 +1490,7 @@ function App() {
                       {workspace.vulnerability.map(([county, score, label, tone]) => (
                         <button
                           className={selectedCounty === county ? 'risk-row selected' : 'risk-row'}
+                          data-search-id={`vulnerability-${county}`}
                           key={county}
                           onClick={() => setSelectedCounty(county)}
                         >
@@ -1252,7 +1523,7 @@ function App() {
                   </div>
                   <div className="rule-list">
                     {workspace.rules.map(([title, detail], index) => (
-                      <div className="panel rule-card" key={title}>
+                      <div className="panel rule-card" data-search-id={`rule-${title}`} key={title}>
                         <span className="rule-number">0{index + 1}</span>
                         <div>
                           <strong>{title}</strong>
@@ -1278,7 +1549,7 @@ function App() {
                   </div>
                   <div className="panel event-list">
                     {workspace.activity.map(([event, detail, age]) => (
-                      <div className="event-row" key={event}>
+                      <div className="event-row" data-search-id={`activity-${event}`} key={event}>
                         <span className="event-dot" />
                         <div>
                           <strong>{event}</strong>
@@ -1543,6 +1814,24 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+      {searchHighlightRect && (
+        <div
+          aria-hidden
+          style={{
+            position: 'fixed',
+            top: searchHighlightRect.top - 6,
+            left: searchHighlightRect.left - 6,
+            width: searchHighlightRect.width + 12,
+            height: searchHighlightRect.height + 12,
+            borderRadius: 12,
+            border: '2px solid #5a9a70',
+            boxShadow: '0 0 0 4px rgba(90, 154, 112, 0.25)',
+            pointerEvents: 'none',
+            zIndex: 75,
+            transition: 'opacity 0.4s ease',
+          }}
+        />
       )}
     </div>
   )
