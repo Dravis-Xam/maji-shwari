@@ -69,3 +69,7 @@ dapp-launchpad deploy -h
 ```
 
 See the [deploy section of the quickstart](/tools/dApp-development/launchpad/quickstart/#deploy-to-production) for usage examples.
+
+> SOLIDITY: https://docs.soliditylang.org/en/v0.8.37
+
+> HARDHUT: https://hardhat.org/docs/getting-started
