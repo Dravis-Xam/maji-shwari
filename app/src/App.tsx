@@ -134,7 +134,72 @@ const riskCoordinates: Record<string, [number, number]> = {
   Makueni: [-2.2, 37.9],
 }
 type Role = 'community' | 'government' | 'donor'
-type User = { name: string; email?: string; role: Role | 'pending' }
+type User = { name: string; email?: string; role: Role | 'pending' | 'verifying' }
+
+type TourStepConfig = { title: string; body: string; navTarget?: string; target?: string }
+
+const tourStepsByRole: Record<Role, TourStepConfig[]> = {
+  community: [
+    {
+      title: 'Create a project',
+      body: 'Submit a plan, artifacts, and contact details for validation.',
+      navTarget: 'Overview',
+      target: 'create-project',
+    },
+    {
+      title: 'Share progress',
+      body: 'Send SMS-style reports so independent confirmations build trust.',
+      navTarget: 'Overview',
+      target: 'log-report',
+    },
+    {
+      title: 'Request funding',
+      body: 'Ask donors to fund a project with its plan and evidence.',
+      navTarget: 'Fund releases',
+      target: 'fund-action',
+    },
+  ],
+  government: [
+    {
+      title: 'Oversee delivery',
+      body: 'Review every project and lifecycle state across your county.',
+      navTarget: 'Projects',
+      target: 'nav-projects',
+    },
+    {
+      title: 'Review alerts',
+      body: 'Use Community reports to catch delays and fraud signals early.',
+      navTarget: 'Community reports',
+      target: 'nav-community-reports',
+    },
+    {
+      title: 'Protect funding',
+      body: 'Review milestone evidence before funding moves forward.',
+      navTarget: 'Fund releases',
+      target: 'nav-fund-releases',
+    },
+  ],
+  donor: [
+    {
+      title: 'Discover projects',
+      body: 'Browse verified community projects and their progress.',
+      navTarget: 'Projects',
+      target: 'nav-projects',
+    },
+    {
+      title: 'Send a ROD',
+      body: 'Send a request to donate to a project from Fund releases.',
+      navTarget: 'Fund releases',
+      target: 'fund-action',
+    },
+    {
+      title: 'Track releases',
+      body: 'Monitor utilization, reports, and audit activity.',
+      navTarget: 'Activity log',
+      target: 'nav-activity-log',
+    },
+  ],
+}
 
 function MapFocus({ county }: { county: string }) {
   const map = useMap()
@@ -174,6 +239,14 @@ function App() {
   const [reportPhone, setReportPhone] = useState('')
   const [workspace, setWorkspace] = useState(demoWorkspace)
   const [selectedCounty, setSelectedCounty] = useState('Turkana')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [verifyBusy, setVerifyBusy] = useState(false)
+  const [tourRect, setTourRect] = useState<{
+    top: number
+    left: number
+    width: number
+    height: number
+  } | null>(null)
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -210,6 +283,49 @@ function App() {
       .catch(() => setDataSource('demo'))
   }, [user])
 
+  useEffect(() => {
+    if (tourStep === null || !user || user.role === 'pending' || user.role === 'verifying') {
+      setTourRect(null)
+      return
+    }
+    const step = tourStepsByRole[user.role][tourStep]
+    if (!step) {
+      setTourRect(null)
+      return
+    }
+    if (step.navTarget && step.navTarget !== activeNav) setActiveNav(step.navTarget)
+
+    const measure = () => {
+      const element = step.target ? document.querySelector(`[data-tour="${step.target}"]`) : null
+      if (!element) {
+        setTourRect(null)
+        return
+      }
+      const bounds = element.getBoundingClientRect()
+      setTourRect({
+        top: bounds.top,
+        left: bounds.left,
+        width: bounds.width,
+        height: bounds.height,
+      })
+    }
+
+    const timer = window.setTimeout(() => {
+      document
+        .querySelector(`[data-tour="${step.target}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      measure()
+    }, 60)
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [tourStep, activeNav, user])
+
   const finishRoleOnboarding = async () => {
     if (!selectedRole) return
     const response = await fetch('/api/auth/login', {
@@ -218,10 +334,47 @@ function App() {
       body: JSON.stringify({ action: 'role', role: selectedRole }),
     })
     const payload = await response.json()
-    if (!response.ok)
-      return setNotice(payload.error ?? 'That role is not available for this account.')
-    setUser(payload.user)
-    setShowCreatePrompt(true)
+    if (!response.ok) return setNotice(payload.error ?? 'Could not send a verification code.')
+    setUser((current) => (current ? { ...current, role: 'verifying' } : current))
+    setNotice(
+      payload.demoCode
+        ? `Demo mode: your verification code is ${payload.demoCode}. Set RESEND_API_KEY and EMAIL_FROM to send real emails.`
+        : `We sent a 6-digit code to ${payload.email}.`,
+    )
+  }
+
+  const handleVerifyCode = async () => {
+    setVerifyBusy(true)
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'verify', code: verificationCode }),
+      })
+      const payload = await response.json()
+      if (!response.ok) return setNotice(payload.error ?? 'That code did not work.')
+      setUser(payload.user)
+      setVerificationCode('')
+      setNotice('')
+      setShowCreatePrompt(true)
+    } finally {
+      setVerifyBusy(false)
+    }
+  }
+
+  const handleResendCode = async () => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'resend' }),
+    })
+    const payload = await response.json()
+    if (!response.ok) return setNotice(payload.error ?? 'Could not resend the code.')
+    setNotice(
+      payload.demoCode
+        ? `Demo mode: your new code is ${payload.demoCode}.`
+        : 'A new code is on its way.',
+    )
   }
 
   const handleLogin = async () => {
@@ -375,17 +528,46 @@ function App() {
               </button>
             ))}
           </div>
-          {availableRoles.length === 0 && (
-            <p className="auth-error">
-              No role is approved for {user.email}. Contact the platform administrator.
-            </p>
-          )}
           <button
             className="primary-button auth-button"
             disabled={!selectedRole}
             onClick={finishRoleOnboarding}
           >
             Continue to dashboard
+          </button>
+        </div>
+      </div>
+    )
+  if (user.role === 'verifying')
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <span className="brand-mark">
+            <Sprout size={19} />
+          </span>
+          <p className="eyebrow">SECURITY CHECK</p>
+          <h1>Verify your email</h1>
+          <p>Enter the 6-digit code we sent to {user.email}.</p>
+          {notice && <p className="auth-error">{notice}</p>}
+          <input
+            className="auth-input"
+            value={verificationCode}
+            onChange={(event) =>
+              setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+            }
+            placeholder="123456"
+            inputMode="numeric"
+            maxLength={6}
+          />
+          <button
+            className="primary-button auth-button"
+            disabled={verifyBusy || verificationCode.length !== 6}
+            onClick={handleVerifyCode}
+          >
+            {verifyBusy ? 'Verifying...' : 'Verify and continue'}
+          </button>
+          <button className="text-button" onClick={handleResendCode}>
+            Resend code
           </button>
         </div>
       </div>
@@ -456,6 +638,7 @@ function App() {
           ].map(([label, Icon]) => (
             <button
               key={label as string}
+              data-tour={`nav-${(label as string).toLowerCase().replace(/\s+/g, '-')}`}
               className={activeNav === label ? 'nav-item active' : 'nav-item'}
               onClick={() => setActiveNav(label as string)}
             >
@@ -465,12 +648,14 @@ function App() {
           ))}
           <p className="nav-label nav-spacer">System</p>
           <button
+            data-tour="nav-verification-rules"
             className={activeNav === 'Verification rules' ? 'nav-item active' : 'nav-item'}
             onClick={() => setActiveNav('Verification rules')}
           >
             <ShieldCheck size={17} /> Verification rules
           </button>
           <button
+            data-tour="nav-activity-log"
             className={activeNav === 'Activity log' ? 'nav-item active' : 'nav-item'}
             onClick={() => setActiveNav('Activity log')}
           >
@@ -528,11 +713,19 @@ function App() {
             </div>
             <div className="heading-actions">
               {user.role !== 'donor' && (
-                <button className="secondary-button" onClick={() => setActionKind('project')}>
+                <button
+                  data-tour="create-project"
+                  className="secondary-button"
+                  onClick={() => setActionKind('project')}
+                >
                   Create project
                 </button>
               )}
-              <button className="primary-button" onClick={() => setShowReport(true)}>
+              <button
+                data-tour="log-report"
+                className="primary-button"
+                onClick={() => setShowReport(true)}
+              >
                 <MessageSquareText size={17} /> Log community report
               </button>
             </div>
@@ -912,11 +1105,19 @@ function App() {
                     </div>
                     <div className="heading-actions">
                       {user.role === 'donor' ? (
-                        <button className="primary-button" onClick={() => setActionKind('rod')}>
+                        <button
+                          data-tour="fund-action"
+                          className="primary-button"
+                          onClick={() => setActionKind('rod')}
+                        >
                           Send ROD
                         </button>
                       ) : (
-                        <button className="primary-button" onClick={() => setActionKind('request')}>
+                        <button
+                          data-tour="fund-action"
+                          className="primary-button"
+                          onClick={() => setActionKind('request')}
+                        >
                           Request funding
                         </button>
                       )}
@@ -1129,55 +1330,50 @@ function App() {
           </div>
         </div>
       )}
-      {tourStep !== null && (
-        <div className="tour-backdrop">
-          <div className="tour-card">
-            <span className="tour-step">{tourStep + 1} / 3</span>
-            <p className="eyebrow">{user.role.toUpperCase()} TOUR</p>
-            <h2>
-              {
-                (user.role === 'donor'
-                  ? ['Discover projects', 'Send a ROD', 'Track releases']
-                  : user.role === 'government'
-                    ? ['Oversee delivery', 'Review alerts', 'Protect funding']
-                    : ['Create a project', 'Share progress', 'Request funding'])[tourStep]
-              }
-            </h2>
-            <p>
-              {
-                (user.role === 'donor'
-                  ? [
-                      'Browse verified community projects and their progress.',
-                      'Send a request to donate to a project from Fund releases.',
-                      'Monitor utilization, reports, and audit activity.',
-                    ]
-                  : user.role === 'government'
-                    ? [
-                        'Review every project and lifecycle state across your county.',
-                        'Use Community reports to catch delays and fraud signals early.',
-                        'Review milestone evidence before funding moves forward.',
-                      ]
-                    : [
-                        'Submit a plan, artifacts, and contact details for validation.',
-                        'Send SMS-style reports so independent confirmations build trust.',
-                        'Ask donors to fund a project with its plan and evidence.',
-                      ])[tourStep]
-              }
-            </p>
-            <div className="tour-actions">
-              <button className="text-button" onClick={() => setTourStep(null)}>
-                Skip tour
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => (tourStep === 2 ? setTourStep(null) : setTourStep(tourStep + 1))}
-              >
-                {tourStep === 2 ? 'Finish' : 'Next'}
-              </button>
+      {tourStep !== null &&
+        (user.role === 'community' || user.role === 'government' || user.role === 'donor') && (
+          <div
+            className="tour-backdrop"
+            style={tourRect ? { background: 'transparent' } : undefined}
+          >
+            {tourRect && (
+              <div
+                aria-hidden
+                style={{
+                  position: 'fixed',
+                  top: tourRect.top - 10,
+                  left: tourRect.left - 10,
+                  width: tourRect.width + 20,
+                  height: tourRect.height + 20,
+                  borderRadius: 14,
+                  border: '2px solid #5a9a70',
+                  boxShadow: '0 0 0 9999px rgba(15, 23, 20, 0.6)',
+                  pointerEvents: 'none',
+                  zIndex: 70,
+                  transition:
+                    'top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease',
+                }}
+              />
+            )}
+            <div className="tour-card" style={{ position: 'relative', zIndex: 71 }}>
+              <span className="tour-step">{tourStep + 1} / 3</span>
+              <p className="eyebrow">{user.role.toUpperCase()} TOUR</p>
+              <h2>{tourStepsByRole[user.role][tourStep]?.title}</h2>
+              <p>{tourStepsByRole[user.role][tourStep]?.body}</p>
+              <div className="tour-actions">
+                <button className="text-button" onClick={() => setTourStep(null)}>
+                  Skip tour
+                </button>
+                <button
+                  className="primary-button"
+                  onClick={() => (tourStep === 2 ? setTourStep(null) : setTourStep(tourStep + 1))}
+                >
+                  {tourStep === 2 ? 'Finish' : 'Next'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       {showReport && (
         <div className="modal-backdrop" onClick={() => setShowReport(false)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>

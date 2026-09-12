@@ -1,4 +1,4 @@
-import { googleRoles, readPendingSession, readSession } from '../_lib/auth'
+import { ALL_ROLES, readPendingSession, readSession, readVerificationSession } from '../_lib/auth'
 import { json } from '../_lib/http'
 
 export async function GET(request: Request) {
@@ -7,10 +7,25 @@ export async function GET(request: Request) {
     return json({ user }, { headers: { 'cache-control': 'no-store' } })
   }
 
+  const verification = await readVerificationSession(request)
+  if (verification) {
+    return json(
+      {
+        user: {
+          sub: verification.sub,
+          name: verification.name,
+          email: verification.email,
+          role: 'verifying',
+        },
+      },
+      { headers: { 'cache-control': 'no-store' } },
+    )
+  }
+
   const pending = await readPendingSession(request)
   if (pending) {
     return json(
-      { user: { ...pending, role: 'pending' }, availableRoles: googleRoles(pending.email) },
+      { user: { ...pending, role: 'pending' }, availableRoles: ALL_ROLES },
       { headers: { 'cache-control': 'no-store' } },
     )
   }

@@ -2,6 +2,7 @@ export type Role = 'community' | 'government' | 'donor'
 export type Session = { sub: string; name: string; email: string; role: Role }
 const COOKIE = 'maji_session'
 const PENDING_COOKIE = 'maji_pending'
+const VERIFY_COOKIE = 'maji_verify'
 const env =
   (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } })
     .process?.env ?? {}
@@ -20,6 +21,19 @@ function decode(value: string) {
   return atob(
     value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - (value.length % 4)) % 4),
   )
+}
+
+export function generateCode() {
+  const bytes = new Uint32Array(1)
+  crypto.getRandomValues(bytes)
+  return String(bytes[0] % 1000000).padStart(6, '0')
+}
+
+export async function hashCode(code: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code))
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 async function signJwt(payload: Record<string, unknown>, lifetimeSeconds: number) {
@@ -104,6 +118,57 @@ export async function verifySignedState(token: string) {
   return verifyJwt(token)
 }
 
+export type PendingVerification = {
+  sub: string
+  name: string
+  email: string
+  role: Role
+  codeHash: string
+  attempts: number
+}
+
+export async function createVerificationSession(
+  session: { sub: string; name: string; email: string; role: Role },
+  codeHash: string,
+  attempts = 0,
+) {
+  return signJwt({ ...session, verify: true, codeHash, attempts }, 10 * 60)
+}
+
+export async function readVerificationSession(
+  request: Request,
+): Promise<PendingVerification | null> {
+  const token = request.headers
+    .get('cookie')
+    ?.split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${VERIFY_COOKIE}=`))
+    ?.slice(VERIFY_COOKIE.length + 1)
+  if (!token) return null
+  try {
+    const payload = await verifyJwt(token)
+    if (payload.verify !== true) return null
+    return {
+      sub: String(payload.sub),
+      name: String(payload.name),
+      email: String(payload.email),
+      role: payload.role as Role,
+      codeHash: String(payload.codeHash),
+      attempts: Number(payload.attempts) || 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function verificationCookie(token: string) {
+  return `${VERIFY_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${env.NODE_ENV === 'production' ? '; Secure' : ''}`
+}
+
+export function clearVerificationCookie() {
+  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+}
+
 export async function createSession(session: Session) {
   return signJwt(session, 8 * 60 * 60)
 }
@@ -149,30 +214,7 @@ export function canDonate(role: Role) {
   return role === 'donor'
 }
 
-export function googleRole(email: string): Role | null {
-  const normalized = email.toLowerCase()
-  const list = (key: string) =>
-    (env[key] ?? '')
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean)
-  if (list('GOOGLE_GOVERNMENT_EMAILS').includes(normalized)) return 'government'
-  if (list('GOOGLE_DONOR_EMAILS').includes(normalized)) return 'donor'
-  if (list('GOOGLE_COMMUNITY_EMAILS').includes(normalized)) return 'community'
-  return null
-}
-
-export function googleRoles(email: string): Role[] {
-  const normalized = email.toLowerCase()
-  const list = (key: string) =>
-    (env[key] ?? '')
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean)
-  return (['community', 'government', 'donor'] as Role[]).filter((role) =>
-    list(`GOOGLE_${role.toUpperCase()}_EMAILS`).includes(normalized),
-  )
-}
+export const ALL_ROLES: Role[] = ['community', 'government', 'donor']
 
 export async function requireSession(request: Request) {
   const session = await readSession(request)
