@@ -7,8 +7,10 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
+  Clock,
   FileCheck2,
   Filter,
+  HandCoins,
   LayoutDashboard,
   Map,
   Menu,
@@ -126,6 +128,26 @@ const demoWorkspace = {
     ['BHR-042 reached verification threshold', 'Verification engine', '3 hours ago'],
     ['Daily reconciliation scheduled for 02:00 UTC', 'System scheduler', '4 hours ago'],
   ],
+  fundingRequests: [
+    {
+      id: 'fr-demo-1',
+      projectId: 'WTR-117',
+      projectName: 'Tana River Water Pan',
+      kind: 'request' as const,
+      message: 'Milestone 2 needs additional pump equipment before the rains.',
+      amountCents: 320_000_00,
+      status: 'Open' as const,
+    },
+    {
+      id: 'fr-demo-2',
+      projectId: 'FRM-089',
+      projectName: 'Kitui Agroforestry Hub',
+      kind: 'request' as const,
+      message: 'Seedling stock for the next planting window.',
+      amountCents: 145_000_00,
+      status: 'Open' as const,
+    },
+  ],
 }
 const riskCoordinates: Record<string, [number, number]> = {
   Turkana: [3.1, 35.6],
@@ -135,6 +157,24 @@ const riskCoordinates: Record<string, [number, number]> = {
 }
 type Role = 'community' | 'government' | 'donor'
 type User = { name: string; email?: string; role: Role | 'pending' | 'verifying' }
+
+type FundingRequestSummary = {
+  id: string
+  projectId: string
+  projectName: string
+  kind: 'request' | 'rod'
+  message: string
+  amountCents: number
+  status: 'Open' | 'Funded' | 'Pending approval'
+}
+
+type FollowUpDetail = { label: string; value: string }
+type FollowUp = {
+  title: string
+  message: string
+  details: FollowUpDetail[]
+  onDone?: () => void
+}
 
 type TourStepConfig = { title: string; body: string; navTarget?: string; target?: string }
 
@@ -288,6 +328,27 @@ function greetingForHour(hour: number) {
   return 'Good evening'
 }
 
+function generateProjectCode(name: string, existingIds: string[]) {
+  const letters =
+    name
+      .replace(/[^a-zA-Z\s]/g, '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 3)
+      .padEnd(3, 'X') || 'PRJ'
+
+  let code = ''
+  do {
+    const number = String(Math.floor(Math.random() * 900) + 100)
+    code = `${letters}-${number}`
+  } while (existingIds.includes(code))
+  return code
+}
+
 function MapFocus({ county }: { county: string }) {
   const map = useMap()
   useEffect(() => {
@@ -314,8 +375,16 @@ function App() {
   const [actionName, setActionName] = useState('')
   const [actionCounty, setActionCounty] = useState('')
   const [actionPlan, setActionPlan] = useState('')
-  const [actionArtifacts, setActionArtifacts] = useState('')
+  const [actionArtifactFiles, setActionArtifactFiles] = useState<File[]>([])
   const [actionContact, setActionContact] = useState('')
+  const [actionSubmitting, setActionSubmitting] = useState(false)
+  const [loginSubmitting, setLoginSubmitting] = useState(false)
+  const [roleSubmitting, setRoleSubmitting] = useState(false)
+  const [resendBusy, setResendBusy] = useState(false)
+  const [followUp, setFollowUp] = useState<FollowUp | null>(null)
+  const [fundingRequestDetail, setFundingRequestDetail] = useState<FundingRequestSummary | null>(
+    null,
+  )
   const [notice, setNotice] = useState('')
   const [projects, setProjects] = useState(demoProjects)
   const [reports, setReports] = useState(demoReports)
@@ -441,6 +510,31 @@ function App() {
       .slice(0, 8)
   }, [debouncedQuery, projects, reports, workspace])
 
+  useEffect(() => {
+    if (actionKind !== 'project') return
+    setActionProject(
+      generateProjectCode(
+        actionName,
+        projects.map((project) => project.id),
+      ),
+    )
+    // Regenerate only when the name changes meaningfully; project list changes
+    // (e.g. from a background refresh) shouldn't keep rewriting the code.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionKind, actionName])
+
+  const resetActionForm = () => {
+    setActionKind(null)
+    setActionProject('')
+    setActionName('')
+    setActionCounty('')
+    setActionPlan('')
+    setActionArtifactFiles([])
+    setActionContact('')
+    setActionMessage('')
+    setActionAmount('')
+  }
+
   const handleSelectSearchResult = (result: SearchResultItem) => {
     setActiveNav(result.navTarget)
     if (result.countyFocus) setSelectedCounty(result.countyFocus)
@@ -506,23 +600,32 @@ function App() {
   }, [tourStep, activeNav, user])
 
   const finishRoleOnboarding = async () => {
-    if (!selectedRole) return
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'role', role: selectedRole }),
-    })
-    const payload = await response.json()
-    if (!response.ok) return setNotice(payload.error ?? 'Could not send a verification code.')
-    setUser((current) => (current ? { ...current, role: 'verifying' } : current))
-    setNotice(
-      payload.demoCode
-        ? `Demo mode: your verification code is ${payload.demoCode}. Set RESEND_API_KEY and EMAIL_FROM to send real emails.`
-        : `We sent a 6-digit code to ${payload.email}.`,
-    )
+    if (!selectedRole || roleSubmitting) return
+    setRoleSubmitting(true)
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'role', role: selectedRole }),
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        setNotice(payload.error ?? 'Could not send a verification code.')
+        return
+      }
+      setUser((current) => (current ? { ...current, role: 'verifying' } : current))
+      setNotice(
+        payload.demoCode
+          ? `Demo mode: your verification code is ${payload.demoCode}. Set RESEND_API_KEY and EMAIL_FROM to send real emails.`
+          : `We sent a 6-digit code to ${payload.email}.`,
+      )
+    } finally {
+      setRoleSubmitting(false)
+    }
   }
 
   const handleVerifyCode = async () => {
+    if (verifyBusy || verificationCode.length !== 6) return
     setVerifyBusy(true)
     try {
       const response = await fetch('/api/auth/login', {
@@ -542,21 +645,29 @@ function App() {
   }
 
   const handleResendCode = async () => {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'resend' }),
-    })
-    const payload = await response.json()
-    if (!response.ok) return setNotice(payload.error ?? 'Could not resend the code.')
-    setNotice(
-      payload.demoCode
-        ? `Demo mode: your new code is ${payload.demoCode}.`
-        : 'A new code is on its way.',
-    )
+    if (resendBusy) return
+    setResendBusy(true)
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'resend' }),
+      })
+      const payload = await response.json()
+      if (!response.ok) return setNotice(payload.error ?? 'Could not resend the code.')
+      setNotice(
+        payload.demoCode
+          ? `Demo mode: your new code is ${payload.demoCode}.`
+          : 'A new code is on its way.',
+      )
+    } finally {
+      setResendBusy(false)
+    }
   }
 
   const handleLogin = async () => {
+    if (loginSubmitting || loginName.trim().length < 2) return
+    setLoginSubmitting(true)
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -572,6 +683,8 @@ function App() {
       setUser({ name: loginName.trim(), role: 'community' })
       setDataSource('demo')
       setShowCreatePrompt(true)
+    } finally {
+      setLoginSubmitting(false)
     }
   }
 
@@ -581,41 +694,91 @@ function App() {
     setActiveNav('Overview')
   }
 
+  const isActionFormValid =
+    actionKind === 'project'
+      ? actionName.trim().length > 1 &&
+        actionCounty.trim().length > 1 &&
+        actionPlan.trim().length > 5 &&
+        actionContact.trim().length > 3
+      : actionKind !== null &&
+        actionProject.trim().length > 1 &&
+        actionMessage.trim().length > 5 &&
+        Number(actionAmount) > 0
+
   const handleAction = async () => {
-    const endpoint = actionKind === 'project' ? '/api/projects' : '/api/funding-requests'
-    const body =
-      actionKind === 'project'
-        ? {
-            id: actionProject,
-            name: actionName,
-            county: actionCounty,
-            plan: actionPlan,
-            artifacts: actionArtifacts,
-            contact: actionContact,
-          }
-        : {
-            projectId: actionProject,
-            message: actionMessage,
-            amountCents: Math.round(Number(actionAmount) * 100),
-            kind: actionKind === 'rod' ? 'rod' : 'request',
-          }
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const payload = await response.json()
-    if (!response.ok) return setNotice(payload.error ?? 'Action could not be completed.')
-    setActionKind(null)
-    if (actionKind === 'project') setTourStep(0)
-    setNotice(
-      actionKind === 'project'
-        ? 'Project created as Draft and queued for validation.'
-        : actionKind === 'rod'
-          ? 'Request to donate sent to the project owner.'
-          : 'Funding request sent to donors.',
-    )
-    window.setTimeout(() => setNotice(''), 4500)
+    if (actionSubmitting || !isActionFormValid) return
+    setActionSubmitting(true)
+    try {
+      const endpoint = actionKind === 'project' ? '/api/projects' : '/api/funding-requests'
+      const body =
+        actionKind === 'project'
+          ? {
+              id: actionProject,
+              name: actionName,
+              county: actionCounty,
+              plan: actionPlan,
+              artifacts: actionArtifactFiles.map((file) => file.name).join(', '),
+              contact: actionContact,
+            }
+          : {
+              projectId: actionProject,
+              message: actionMessage,
+              amountCents: Math.round(Number(actionAmount) * 100),
+              kind: actionKind === 'rod' ? 'rod' : 'request',
+            }
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        setNotice(payload.error ?? 'Action could not be completed.')
+        return
+      }
+      const completedKind = actionKind
+      const completedProject = actionProject
+      const completedName = actionName
+      const completedCounty = actionCounty
+      const completedAmount = actionAmount
+      const completedMessage = actionMessage
+      resetActionForm()
+
+      if (completedKind === 'project') {
+        setFollowUp({
+          title: 'Project created',
+          message:
+            'Your project was created as a Draft and is now queued for community and government validation.',
+          details: [
+            { label: 'Project code', value: completedProject },
+            { label: 'Name', value: completedName },
+            { label: 'County', value: completedCounty },
+            { label: 'Status', value: 'Draft' },
+            { label: 'Progress', value: '0% — awaiting first confirmations' },
+          ],
+          onDone: () => setTourStep(0),
+        })
+      } else {
+        setFollowUp({
+          title: completedKind === 'rod' ? 'Request to donate sent' : 'Funding request sent',
+          message:
+            completedKind === 'rod'
+              ? 'Your commitment was sent to the project owner for confirmation.'
+              : 'Your funding request was sent to donors for review.',
+          details: [
+            { label: 'Project code', value: completedProject },
+            { label: 'Message', value: completedMessage },
+            {
+              label: 'Amount',
+              value: completedAmount ? `KES ${Number(completedAmount).toLocaleString()}` : '—',
+            },
+            { label: 'Status', value: completedKind === 'rod' ? 'Pending confirmation' : 'Open' },
+          ],
+        })
+      }
+    } finally {
+      setActionSubmitting(false)
+    }
   }
 
   if (!authChecked)
@@ -663,10 +826,10 @@ function App() {
               />
               <button
                 className="secondary-button auth-button"
-                disabled={loginName.trim().length < 2}
+                disabled={loginSubmitting || loginName.trim().length < 2}
                 onClick={handleLogin}
               >
-                Preview locally
+                {loginSubmitting ? 'Signing in...' : 'Preview locally'}
               </button>
             </details>
           )}
@@ -709,10 +872,10 @@ function App() {
           </div>
           <button
             className="primary-button auth-button"
-            disabled={!selectedRole}
+            disabled={!selectedRole || roleSubmitting}
             onClick={finishRoleOnboarding}
           >
-            Continue to dashboard
+            {roleSubmitting ? 'Sending code...' : 'Continue to dashboard'}
           </button>
         </div>
       </div>
@@ -745,14 +908,15 @@ function App() {
           >
             {verifyBusy ? 'Verifying...' : 'Verify and continue'}
           </button>
-          <button className="text-button" onClick={handleResendCode}>
-            Resend code
+          <button className="text-button" disabled={resendBusy} onClick={handleResendCode}>
+            {resendBusy ? 'Sending...' : 'Resend code'}
           </button>
         </div>
       </div>
     )
 
   const handleReport = async () => {
+    if (isSubmitting || !reportMessage.trim() || !reportPhone.trim()) return
     setIsSubmitting(true)
     try {
       const response = await fetch('/api/reports', {
@@ -766,15 +930,25 @@ function App() {
         return
       }
       setShowReport(false)
+      const submittedMessage = reportMessage
+      const submittedPhone = reportPhone
       setReportMessage('')
       setReportPhone('')
+
+      const projectCode = submittedMessage.trim().split(/\s+/)[0]?.toUpperCase()
+      let matchedProject: (typeof projects)[number] | undefined
+
       const refreshed = await fetch('/api/dashboard')
       if (refreshed.ok) {
         const dashboard = await refreshed.json()
         setProjects(dashboard.projects)
         setReports(dashboard.reports)
         setMetrics(dashboard.metrics)
+        matchedProject = dashboard.projects.find(
+          (project: { id: string }) => project.id === projectCode,
+        )
       }
+
       const result =
         payload.state === 'verified'
           ? 'Project verified after reaching its confirmation threshold.'
@@ -783,8 +957,31 @@ function App() {
             : payload.demo
               ? 'Report accepted in demo mode. Add DATABASE_URL to persist it in Neon.'
               : 'Report queued for verification. The community will receive an SMS confirmation.'
-      setNotice(result)
-      window.setTimeout(() => setNotice(''), 4500)
+
+      setFollowUp({
+        title:
+          payload.state === 'verified'
+            ? 'Project verified'
+            : payload.state === 'audit_flagged'
+              ? 'Audit flag created'
+              : 'Report submitted',
+        message: result,
+        details: [
+          { label: 'Message', value: submittedMessage },
+          { label: 'Source phone', value: submittedPhone },
+          ...(matchedProject
+            ? [
+                { label: 'Project', value: matchedProject.name },
+                { label: 'Status', value: matchedProject.status },
+                {
+                  label: 'Confirmations',
+                  value: matchedProject.confirmations,
+                },
+                { label: 'Progress', value: `${matchedProject.progress}%` },
+              ]
+            : []),
+        ],
+      })
     } catch {
       setNotice('Backend unavailable. Check your connection and try again.')
     } finally {
@@ -813,6 +1010,7 @@ function App() {
             ['Projects', FileCheck2],
             ['Community reports', MessageSquareText],
             ['Fund releases', CircleDollarSign],
+            ['Activities', Clock],
             ['Vulnerability map', Map],
           ].map(([label, Icon]) => (
             <button
@@ -1434,6 +1632,235 @@ function App() {
                       </div>
                     ))}
                   </div>
+                  {user.role === 'donor' && (workspace.fundingRequests ?? []).length > 0 && (
+                    <div className="panel">
+                      <div className="panel-heading">
+                        <div>
+                          <h2>Funding requests from project owners</h2>
+                          <p>Open requests you can review and choose to fund.</p>
+                        </div>
+                      </div>
+                      <div className="release-grid">
+                        {(workspace.fundingRequests ?? [])
+                          .filter((request) => request.status === 'Open')
+                          .map((request) => (
+                            <button
+                              key={request.id}
+                              className="release-card"
+                              style={{ textAlign: 'left', cursor: 'pointer' }}
+                              onClick={() => setFundingRequestDetail(request)}
+                            >
+                              <div className="release-card-top">
+                                <span className="project-badge amber">
+                                  <HandCoins size={15} />
+                                </span>
+                                <span className="status review">
+                                  <span />
+                                  {request.status}
+                                </span>
+                              </div>
+                              <strong>{request.projectName}</strong>
+                              <small>{request.projectId}</small>
+                              <div className="release-amount">
+                                {`KES ${(request.amountCents / 100).toLocaleString()}`}
+                                <span>Tap to view details</span>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              {activeNav === 'Activities' && (
+                <>
+                  <div className="tab-heading">
+                    <div>
+                      <p className="eyebrow">ONGOING WORK</p>
+                      <h2>Activities</h2>
+                      <p>
+                        Everything still in motion — projects, funding, and reports needing
+                        attention.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>Projects in review</h2>
+                        <p>Not yet verified.</p>
+                      </div>
+                    </div>
+                    {projects.filter((project) => project.status !== 'Verified').length === 0 ? (
+                      <p style={{ padding: 16 }}>Nothing pending — every project is verified.</p>
+                    ) : (
+                      projects
+                        .filter((project) => project.status !== 'Verified')
+                        .map((project) => (
+                          <button
+                            key={project.id}
+                            className="project-row"
+                            style={{
+                              width: '100%',
+                              textAlign: 'left',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => setActiveNav('Projects')}
+                          >
+                            <div className="project-name">
+                              <span className={`project-badge ${project.color}`}>
+                                <Sprout size={15} />
+                              </span>
+                              <div>
+                                <strong>{project.name}</strong>
+                                <small>
+                                  {project.id} · {project.county}
+                                </small>
+                              </div>
+                            </div>
+                            <div className="confirmation">
+                              <strong>{project.confirmations.split(' / ')[0]}</strong>
+                              <span> / {project.confirmations.split(' / ')[1]} needed</span>
+                            </div>
+                            <div className="progress-wrap">
+                              <div className="progress-bar">
+                                <span style={{ width: `${project.progress}%` }} />
+                              </div>
+                              <small>{project.progress}%</small>
+                            </div>
+                            <span className="status review">
+                              <span />
+                              {project.status}
+                            </span>
+                            <strong className="funding">{project.amount}</strong>
+                          </button>
+                        ))
+                    )}
+                  </div>
+                  <div className="panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>Fund releases pending approval</h2>
+                      </div>
+                    </div>
+                    {workspace.releases.filter((release) => release.status === 'Pending approval')
+                      .length === 0 ? (
+                      <p style={{ padding: 16 }}>No releases waiting on approval.</p>
+                    ) : (
+                      <div className="release-grid">
+                        {workspace.releases
+                          .filter((release) => release.status === 'Pending approval')
+                          .map((release) => (
+                            <button
+                              key={release.projectId}
+                              className="release-card"
+                              style={{ textAlign: 'left', cursor: 'pointer' }}
+                              onClick={() => setActiveNav('Fund releases')}
+                            >
+                              <div className="release-card-top">
+                                <span className="project-badge amber">
+                                  <CircleDollarSign size={15} />
+                                </span>
+                                <span className="status review">
+                                  <span />
+                                  {release.status}
+                                </span>
+                              </div>
+                              <strong>{release.projectName}</strong>
+                              <small>
+                                {release.projectId} · {release.milestone}
+                              </small>
+                              <div className="release-amount">
+                                {release.amount}
+                                <span>Awaiting verification</span>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>Reports needing review</h2>
+                      </div>
+                    </div>
+                    {reports.filter((report) => report.label === 'Audit flag').length === 0 ? (
+                      <p style={{ padding: 16 }}>No reports currently flagged.</p>
+                    ) : (
+                      reports
+                        .filter((report) => report.label === 'Audit flag')
+                        .map((report) => (
+                          <button
+                            key={`${report.message}-${report.time}`}
+                            className="report-item"
+                            style={{
+                              width: '100%',
+                              textAlign: 'left',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => setActiveNav('Community reports')}
+                          >
+                            <span className={`report-icon ${report.tone}`}>
+                              <AlertTriangle size={16} />
+                            </span>
+                            <div>
+                              <strong>{report.message}</strong>
+                              <small>{report.source}</small>
+                            </div>
+                            <div className="report-time">
+                              <span className={report.tone}>{report.label}</span>
+                              <small>{report.time}</small>
+                            </div>
+                          </button>
+                        ))
+                    )}
+                  </div>
+                  {(workspace.fundingRequests ?? []).filter((request) => request.status === 'Open')
+                    .length > 0 && (
+                    <div className="panel">
+                      <div className="panel-heading">
+                        <div>
+                          <h2>Open funding requests</h2>
+                        </div>
+                      </div>
+                      <div className="release-grid">
+                        {(workspace.fundingRequests ?? [])
+                          .filter((request) => request.status === 'Open')
+                          .map((request) => (
+                            <button
+                              key={request.id}
+                              className="release-card"
+                              style={{ textAlign: 'left', cursor: 'pointer' }}
+                              onClick={() => {
+                                setActiveNav('Fund releases')
+                                setFundingRequestDetail(request)
+                              }}
+                            >
+                              <div className="release-card-top">
+                                <span className="project-badge amber">
+                                  <HandCoins size={15} />
+                                </span>
+                                <span className="status review">
+                                  <span />
+                                  {request.status}
+                                </span>
+                              </div>
+                              <strong>{request.projectName}</strong>
+                              <small>{request.projectId}</small>
+                              <div className="release-amount">
+                                {`KES ${(request.amountCents / 100).toLocaleString()}`}
+                                <span>Tap to view</span>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {activeNav === 'Vulnerability map' && (
@@ -1708,7 +2135,7 @@ function App() {
         </div>
       )}
       {actionKind && (
-        <div className="modal-backdrop" onClick={() => setActionKind(null)}>
+        <div className="modal-backdrop" onClick={resetActionForm}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-heading">
               <div>
@@ -1727,19 +2154,15 @@ function App() {
                       : 'Request donor funding'}
                 </h2>
               </div>
-              <button className="close-button" onClick={() => setActionKind(null)}>
+              <button className="close-button" onClick={resetActionForm}>
                 <X size={18} />
               </button>
             </div>
             {actionKind === 'project' ? (
               <>
                 <label>
-                  Project code
-                  <input
-                    value={actionProject}
-                    onChange={(event) => setActionProject(event.target.value)}
-                    placeholder="BHR-123"
-                  />
+                  Project code (auto-generated)
+                  <input value={actionProject} disabled readOnly />
                 </label>
                 <label>
                   Project name
@@ -1766,12 +2189,22 @@ function App() {
                   />
                 </label>
                 <label>
-                  Artifacts and contact
+                  Artifacts
                   <input
-                    value={actionArtifacts}
-                    onChange={(event) => setActionArtifacts(event.target.value)}
-                    placeholder="Artifact links or references"
+                    type="file"
+                    multiple
+                    onChange={(event) =>
+                      setActionArtifactFiles(
+                        event.target.files ? Array.from(event.target.files) : [],
+                      )
+                    }
                   />
+                  {actionArtifactFiles.length > 0 && (
+                    <small>{actionArtifactFiles.map((file) => file.name).join(', ')}</small>
+                  )}
+                </label>
+                <label>
+                  Contact
                   <input
                     value={actionContact}
                     onChange={(event) => setActionContact(event.target.value)}
@@ -1814,11 +2247,122 @@ function App() {
               </>
             )}
             <div className="modal-actions">
-              <button className="secondary-button" onClick={() => setActionKind(null)}>
+              <button className="secondary-button" onClick={resetActionForm}>
                 Cancel
               </button>
-              <button className="primary-button" onClick={handleAction}>
-                Submit securely
+              <button
+                className="primary-button"
+                disabled={actionSubmitting || !isActionFormValid}
+                onClick={handleAction}
+              >
+                {actionSubmitting ? 'Submitting...' : 'Submit securely'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {fundingRequestDetail && (
+        <div className="modal-backdrop" onClick={() => setFundingRequestDetail(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">FUNDING REQUEST</p>
+                <h2>{fundingRequestDetail.projectName}</h2>
+              </div>
+              <button className="close-button" onClick={() => setFundingRequestDetail(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p>{fundingRequestDetail.message}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '12px 0' }}>
+              {[
+                { label: 'Project code', value: fundingRequestDetail.projectId },
+                {
+                  label: 'Amount requested',
+                  value: `KES ${(fundingRequestDetail.amountCents / 100).toLocaleString()}`,
+                },
+                { label: 'Status', value: fundingRequestDetail.status },
+              ].map((detail) => (
+                <div
+                  key={detail.label}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    padding: '8px 12px',
+                    background: 'rgba(90, 154, 112, 0.08)',
+                    borderRadius: 8,
+                    fontSize: 13,
+                  }}
+                >
+                  <span style={{ color: 'rgba(15, 23, 20, 0.6)' }}>{detail.label}</span>
+                  <strong>{detail.value}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setFundingRequestDetail(null)}>
+                Close
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => {
+                  const request = fundingRequestDetail
+                  setFundingRequestDetail(null)
+                  setActionKind('rod')
+                  setActionProject(request.projectId)
+                  setActionMessage(`Funding "${request.projectName}": ${request.message}`)
+                  setActionAmount(String(request.amountCents / 100))
+                }}
+              >
+                <HandCoins size={16} /> Join &amp; fund
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {followUp && (
+        <div className="modal-backdrop" onClick={() => setFollowUp(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">ACTION COMPLETE</p>
+                <h2>{followUp.title}</h2>
+              </div>
+              <button className="close-button" onClick={() => setFollowUp(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p>{followUp.message}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '12px 0' }}>
+              {followUp.details.map((detail) => (
+                <div
+                  key={detail.label}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    padding: '8px 12px',
+                    background: 'rgba(90, 154, 112, 0.08)',
+                    borderRadius: 8,
+                    fontSize: 13,
+                  }}
+                >
+                  <span style={{ color: 'rgba(15, 23, 20, 0.6)' }}>{detail.label}</span>
+                  <strong style={{ textAlign: 'right' }}>{detail.value}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button
+                className="primary-button"
+                onClick={() => {
+                  const onDone = followUp.onDone
+                  setFollowUp(null)
+                  onDone?.()
+                }}
+              >
+                <CheckCircle2 size={16} /> Done
               </button>
             </div>
           </div>

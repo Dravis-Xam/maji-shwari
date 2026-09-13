@@ -1,32 +1,109 @@
-import { demoWorkspace, type WorkspacePayload } from './_lib/workspace'
-import { hasDatabase, ensureSchema, sql } from './_lib/db'
-import { cacheHeaders, json, methodNotAllowed } from './_lib/http'
-import { requireSession } from './_lib/auth'
+export type FundingRequestSummary = {
+  id: string
+  projectId: string
+  projectName: string
+  kind: 'request' | 'rod'
+  message: string
+  amountCents: number
+  status: 'Open' | 'Funded' | 'Pending approval'
+}
 
-export default async function handler(request: Request) {
-  const auth = await requireSession(request)
-  if (auth.response) return auth.response
-  if (request.method !== 'GET') return methodNotAllowed(['GET'])
-  if (!hasDatabase()) return json(demoWorkspace, { headers: cacheHeaders(60) })
+export type WorkspacePayload = {
+  source: 'neon' | 'demo'
+  releases: Array<{
+    projectId: string
+    projectName: string
+    amount: string
+    status: 'Approved' | 'Pending approval'
+    milestone: string
+  }>
+  vulnerability: Array<{ county: string; score: number; label: 'High risk' | 'Watch' | 'Stable' }>
+  rules: Array<{ title: string; detail: string }>
+  activity: Array<{ event: string; detail: string; age: string }>
+  fundingRequests: FundingRequestSummary[]
+}
 
-  try {
-    await ensureSchema()
-    const query = sql()
-    const [releases, scores, activity] = await Promise.all([
-      query`SELECT r.project_id, p.name AS project_name, r.amount_cents, r.status, r.milestone FROM fund_releases r JOIN projects p ON p.id = r.project_id ORDER BY r.created_at DESC LIMIT 30`,
-      query`SELECT county, score, label FROM vulnerability_scores ORDER BY score DESC LIMIT 30`,
-      query`SELECT event, detail, created_at FROM activity_events ORDER BY created_at DESC LIMIT 30`,
-    ])
-    const payload: WorkspacePayload = {
-      source: 'neon',
-      releases: (releases as unknown as Array<{ project_id: string; project_name: string; amount_cents: number; status: 'Approved' | 'Pending approval'; milestone: string }>).map((release) => ({ projectId: release.project_id, projectName: release.project_name, amount: `KES ${(Number(release.amount_cents) / 100000).toLocaleString('en-KE')}`, status: release.status, milestone: release.milestone })),
-      vulnerability: (scores as unknown as Array<{ county: string; score: number; label: 'High risk' | 'Watch' | 'Stable' }>),
-      rules: demoWorkspace.rules,
-      activity: (activity as unknown as Array<{ event: string; detail: string; created_at: string }>).map((item) => ({ event: item.event, detail: item.detail, age: new Date(item.created_at).toLocaleString() })),
-    }
-    return json(payload, { headers: cacheHeaders(60) })
-  } catch (error) {
-    console.error('workspace_read_failed', error)
-    return json(demoWorkspace, { headers: cacheHeaders(10) })
-  }
+export const demoWorkspace: WorkspacePayload = {
+  source: 'demo',
+  releases: [
+    {
+      projectId: 'BHR-042',
+      projectName: 'Makueni Borehole 042',
+      amount: 'KES 4.8M',
+      status: 'Approved',
+      milestone: 'milestone 1 of 3',
+    },
+    {
+      projectId: 'WTR-117',
+      projectName: 'Tana River Water Pan',
+      amount: 'KES 7.2M',
+      status: 'Pending approval',
+      milestone: 'milestone 2 of 3',
+    },
+    {
+      projectId: 'FRM-089',
+      projectName: 'Kitui Agroforestry Hub',
+      amount: 'KES 3.1M',
+      status: 'Approved',
+      milestone: 'milestone 3 of 3',
+    },
+  ],
+  vulnerability: [
+    { county: 'Turkana', score: 82, label: 'High risk' },
+    { county: 'Tana River', score: 73, label: 'Watch' },
+    { county: 'Kitui', score: 64, label: 'Watch' },
+    { county: 'Makueni', score: 41, label: 'Stable' },
+  ],
+  rules: [
+    {
+      title: 'Unique reporters',
+      detail: 'Count one confirmation per reporter, project, and status.',
+    },
+    {
+      title: 'Threshold',
+      detail: 'A project reaches verified after its configured confirmation count.',
+    },
+    {
+      title: 'Audit flags',
+      detail: 'DELAYED, INCOMPLETE, and PROBLEM reports create an audit flag.',
+    },
+    {
+      title: 'Evidence format',
+      detail: 'Messages must use PROJECT-CODE STATUS, such as BHR-042 DONE.',
+    },
+  ],
+  activity: [
+    { event: 'Dashboard data synchronized', detail: 'MajiShwari system', age: '1 hour ago' },
+    { event: 'WTR-117 marked for audit review', detail: 'Verification engine', age: '2 hours ago' },
+    {
+      event: 'BHR-042 reached verification threshold',
+      detail: 'Verification engine',
+      age: '3 hours ago',
+    },
+    {
+      event: 'Daily reconciliation scheduled for 02:00 UTC',
+      detail: 'System scheduler',
+      age: '4 hours ago',
+    },
+  ],
+  fundingRequests: [
+    {
+      id: 'fr-demo-1',
+      projectId: 'WTR-117',
+      projectName: 'Tana River Water Pan',
+      kind: 'request',
+      message: 'Milestone 2 needs additional pump equipment before the rains.',
+      amountCents: 320_000_00,
+      status: 'Open',
+    },
+    {
+      id: 'fr-demo-2',
+      projectId: 'FRM-089',
+      projectName: 'Kitui Agroforestry Hub',
+      kind: 'request',
+      message: 'Seedling stock for the next planting window.',
+      amountCents: 145_000_00,
+      status: 'Open',
+    },
+  ],
 }
