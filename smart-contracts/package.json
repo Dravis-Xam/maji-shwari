@@ -1,0 +1,25 @@
+{
+  "name": "smart-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MajiShwari on-chain audit ledger: Solidity contract, Hardhat environment, and deploy scripts for Polygon.",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy_localhost.ts --network localhost",
+    "deploy:amoy": "hardhat run scripts/deploy_prod.ts --network polygonAmoy",
+    "deploy:polygon": "hardhat run scripts/deploy_prod.ts --network polygonPos"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "dotenv": "^17.4.2",
+    "hardhat": "^2.29.1",
+    "hardhat-ethernal": "^3.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
