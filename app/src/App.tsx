@@ -10,20 +10,24 @@ import {
   Clock,
   FileCheck2,
   Filter,
+  Gem,
   HandCoins,
   LayoutDashboard,
   Map,
   Menu,
   MessageSquareText,
   MoreHorizontal,
+  Moon,
   Search,
   ShieldCheck,
   Sprout,
+  Sun,
   X,
 } from 'lucide-react'
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import './App.css'
+import './themes.css'
 
 const demoProjects = [
   {
@@ -35,6 +39,10 @@ const demoProjects = [
     progress: 92,
     amount: 'KES 4.8M',
     color: 'green',
+    createdAt: '2026-04-02',
+    estimatedCompletion: '2026-07-15',
+    artifacts: ['site-survey.pdf', 'borehole-permit.pdf'],
+    gallery: [] as string[],
   },
   {
     id: 'WTR-117',
@@ -45,6 +53,10 @@ const demoProjects = [
     progress: 58,
     amount: 'KES 7.2M',
     color: 'amber',
+    createdAt: '2026-05-18',
+    estimatedCompletion: '2026-10-01',
+    artifacts: ['pump-quote.pdf'],
+    gallery: [] as string[],
   },
   {
     id: 'FRM-089',
@@ -55,6 +67,10 @@ const demoProjects = [
     progress: 76,
     amount: 'KES 3.1M',
     color: 'green',
+    createdAt: '2026-03-11',
+    estimatedCompletion: '2026-08-20',
+    artifacts: [] as string[],
+    gallery: [] as string[],
   },
 ]
 const demoReports = [
@@ -157,6 +173,7 @@ const riskCoordinates: Record<string, [number, number]> = {
 }
 type Role = 'community' | 'government' | 'donor'
 type User = { name: string; email?: string; role: Role | 'pending' | 'verifying' }
+type Theme = 'light' | 'dark' | 'light-sapphire' | 'dark-sapphire'
 
 type FundingRequestSummary = {
   id: string
@@ -249,6 +266,13 @@ type SearchResultItem = {
   navTarget: string
   countyFocus?: string
 }
+
+const THEME_OPTIONS: Array<{ id: Theme; label: string; icon: typeof Sun }> = [
+  { id: 'light', label: 'Light', icon: Sun },
+  { id: 'dark', label: 'Dark', icon: Moon },
+  { id: 'light-sapphire', label: 'Light sapphire', icon: Gem },
+  { id: 'dark-sapphire', label: 'Dark sapphire', icon: Gem },
+]
 
 function buildSearchIndex(
   projects: typeof demoProjects,
@@ -360,6 +384,23 @@ function MapFocus({ county }: { county: string }) {
 
 function App() {
   const [activeNav, setActiveNav] = useState('Overview')
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      const saved = localStorage.getItem('majishwari-theme')
+      if (
+        saved === 'light' ||
+        saved === 'dark' ||
+        saved === 'light-sapphire' ||
+        saved === 'dark-sapphire'
+      ) {
+        return saved
+      }
+    } catch {
+      // localStorage unavailable (private browsing, etc.) — fall back silently.
+    }
+    return 'light'
+  })
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [showReport, setShowReport] = useState(false)
   const [actionKind, setActionKind] = useState<'project' | 'request' | 'rod' | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -388,6 +429,24 @@ function App() {
   const [notice, setNotice] = useState('')
   const [projects, setProjects] = useState(demoProjects)
   const [reports, setReports] = useState(demoReports)
+  const [detailPanel, setDetailPanel] = useState<{
+    projectId: string
+    mode: 'manage' | 'join'
+  } | null>(null)
+  const [joinListOpen, setJoinListOpen] = useState(false)
+  const [detailDraft, setDetailDraft] = useState<{
+    name: string
+    createdAt: string
+    estimatedCompletion: string
+    artifacts: string[]
+    gallery: string[]
+  } | null>(null)
+  const [detailSaving, setDetailSaving] = useState(false)
+  const [activityDetail, setActivityDetail] = useState<{
+    event: string
+    detail: string
+    age: string
+  } | null>(null)
   const [metrics, setMetrics] = useState(demoMetrics)
   const [dataSource, setDataSource] = useState<'demo' | 'neon'>('demo')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -415,6 +474,15 @@ function App() {
   } | null>(null)
   const lastSearchFetchRef = useRef(0)
   const searchAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try {
+      localStorage.setItem('majishwari-theme', theme)
+    } catch {
+      // localStorage unavailable — theme still applies for this session.
+    }
+  }, [theme])
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -522,6 +590,64 @@ function App() {
     // (e.g. from a background refresh) shouldn't keep rewriting the code.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionKind, actionName])
+
+  useEffect(() => {
+    if (!detailPanel || detailPanel.mode !== 'manage') {
+      setDetailDraft(null)
+      return
+    }
+    const project = projects.find((candidate) => candidate.id === detailPanel.projectId)
+    if (!project) {
+      setDetailDraft(null)
+      return
+    }
+    setDetailDraft({
+      name: project.name,
+      createdAt: project.createdAt ?? '',
+      estimatedCompletion: project.estimatedCompletion ?? '',
+      artifacts: project.artifacts ?? [],
+      gallery: project.gallery ?? [],
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailPanel])
+
+  const closeDetailPanel = () => {
+    setDetailPanel(null)
+    setJoinListOpen(false)
+  }
+
+  const handleSaveDetail = async () => {
+    if (!detailPanel || !detailDraft || detailSaving) return
+    setDetailSaving(true)
+    try {
+      const response = await fetch(`/api/projects/${detailPanel.projectId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(detailDraft),
+      })
+      if (response.ok) {
+        const payload = await response.json()
+        setProjects((current) =>
+          current.map((project) =>
+            project.id === detailPanel.projectId ? { ...project, ...payload.project } : project,
+          ),
+        )
+        setNotice('Project details saved.')
+      } else {
+        // No PATCH /api/projects/:id endpoint yet — update locally so editing
+        // still works end-to-end, and say so plainly rather than pretending.
+        setProjects((current) =>
+          current.map((project) =>
+            project.id === detailPanel.projectId ? { ...project, ...detailDraft } : project,
+          ),
+        )
+        setNotice('Saved locally — add PATCH /api/projects/:id on the backend to persist this.')
+      }
+      window.setTimeout(() => setNotice(''), 5000)
+    } finally {
+      setDetailSaving(false)
+    }
+  }
 
   const resetActionForm = () => {
     setActionKind(null)
@@ -693,6 +819,10 @@ function App() {
     setUser(null)
     setActiveNav('Overview')
   }
+
+  const activeDetailProject = detailPanel
+    ? (projects.find((project) => project.id === detailPanel.projectId) ?? null)
+    : null
 
   const isActionFormValid =
     actionKind === 'project'
@@ -1158,7 +1288,71 @@ function App() {
               <Bell size={18} />
               <i />
             </button>
-            <div className="avatar-small">BW</div>
+            <div style={{ position: 'relative' }}>
+              <button
+                className="icon-button"
+                aria-label="Change theme"
+                onClick={() => setThemeMenuOpen((open) => !open)}
+                onBlur={() => window.setTimeout(() => setThemeMenuOpen(false), 120)}
+              >
+                {(() => {
+                  const ActiveIcon =
+                    THEME_OPTIONS.find((option) => option.id === theme)?.icon ?? Sun
+                  return <ActiveIcon size={18} />
+                })()}
+              </button>
+              {themeMenuOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    width: 200,
+                    background: '#fffaf3',
+                    border: '1px solid rgba(15, 23, 20, 0.12)',
+                    borderRadius: 12,
+                    boxShadow: '0 12px 32px rgba(15, 23, 20, 0.18)',
+                    zIndex: 90,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {THEME_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setTheme(option.id)
+                        setThemeMenuOpen(false)
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        width: '100%',
+                        padding: '10px 14px',
+                        background:
+                          theme === option.id ? 'rgba(90, 154, 112, 0.12)' : 'transparent',
+                        border: 'none',
+                        borderBottom: '1px solid rgba(15, 23, 20, 0.06)',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        textAlign: 'left',
+                        color:
+                          option.id === 'light-sapphire' || option.id === 'dark-sapphire'
+                            ? '#2f5fd6'
+                            : undefined,
+                      }}
+                    >
+                      <option.icon size={16} />
+                      {option.label}
+                      {theme === option.id && (
+                        <CheckCircle2 size={14} style={{ marginLeft: 'auto' }} />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <div className="content-wrap">
@@ -1187,6 +1381,15 @@ function App() {
                   onClick={() => setActionKind('project')}
                 >
                   Create project
+                </button>
+              )}
+              {user.role === 'donor' && (
+                <button
+                  data-tour="create-project"
+                  className="secondary-button"
+                  onClick={() => setJoinListOpen(true)}
+                >
+                  <HandCoins size={16} /> Join a project
                 </button>
               )}
               <button
@@ -1282,7 +1485,15 @@ function App() {
                     <span>Funding</span>
                   </div>
                   {projects.map((project) => (
-                    <div className="project-row" key={project.id}>
+                    <div
+                      className="project-row"
+                      key={project.id}
+                      style={user.role !== 'donor' ? { cursor: 'pointer' } : undefined}
+                      onClick={() =>
+                        user.role !== 'donor' &&
+                        setDetailPanel({ projectId: project.id, mode: 'manage' })
+                      }
+                    >
                       <div className="project-name">
                         <span className={`project-badge ${project.color}`}>
                           <Sprout size={15} />
@@ -1491,6 +1702,11 @@ function App() {
                         className="project-row"
                         data-search-id={`project-${project.id}`}
                         key={project.id}
+                        style={user.role !== 'donor' ? { cursor: 'pointer' } : undefined}
+                        onClick={() =>
+                          user.role !== 'donor' &&
+                          setDetailPanel({ projectId: project.id, mode: 'manage' })
+                        }
                       >
                         <div className="project-name">
                           <span className={`project-badge ${project.color}`}>
@@ -1707,7 +1923,9 @@ function App() {
                               border: 'none',
                               cursor: 'pointer',
                             }}
-                            onClick={() => setActiveNav('Projects')}
+                            onClick={() =>
+                              setDetailPanel({ projectId: project.id, mode: 'manage' })
+                            }
                           >
                             <div className="project-name">
                               <span className={`project-badge ${project.color}`}>
@@ -1993,7 +2211,13 @@ function App() {
                             {age} · {detail}
                           </small>
                         </div>
-                        <ArrowUpRight size={15} />
+                        <button
+                          className="close-button"
+                          aria-label="View activity details"
+                          onClick={() => setActivityDetail({ event, detail, age })}
+                        >
+                          <ArrowUpRight size={15} />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -2261,6 +2485,279 @@ function App() {
           </div>
         </div>
       )}
+      {(joinListOpen || detailPanel) && (
+        <div
+          className="modal-backdrop"
+          onClick={closeDetailPanel}
+          style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch' }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(440px, 100%)',
+              height: '100%',
+              background: '#fffaf3',
+              boxShadow: '-12px 0 32px rgba(15, 23, 20, 0.18)',
+              padding: 24,
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+            }}
+          >
+            <div
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+            >
+              <div>
+                {joinListOpen && detailPanel?.mode === 'join' && (
+                  <button
+                    className="text-button"
+                    style={{ padding: 0, marginBottom: 8 }}
+                    onClick={() => setDetailPanel(null)}
+                  >
+                    ← Back to projects
+                  </button>
+                )}
+                <p className="eyebrow">{detailPanel ? 'PROJECT DETAIL' : 'BROWSE PROJECTS'}</p>
+                <h2>
+                  {detailPanel
+                    ? (activeDetailProject?.name ?? 'Project')
+                    : 'Choose a project to join'}
+                </h2>
+              </div>
+              <button className="close-button" onClick={closeDetailPanel}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {joinListOpen && !detailPanel && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    className="release-card"
+                    style={{ textAlign: 'left', cursor: 'pointer' }}
+                    onClick={() => setDetailPanel({ projectId: project.id, mode: 'join' })}
+                  >
+                    <strong>{project.name}</strong>
+                    <small>
+                      {project.id} · {project.county}
+                    </small>
+                    <div className="release-amount">
+                      {project.amount}
+                      <span>{project.status}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {detailPanel && activeDetailProject && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[{ label: 'ID', value: activeDetailProject.id }].map((row) => (
+                  <div
+                    key={row.label}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      background: 'rgba(90, 154, 112, 0.08)',
+                      borderRadius: 8,
+                      fontSize: 13,
+                    }}
+                  >
+                    <span style={{ color: 'rgba(15, 23, 20, 0.6)' }}>{row.label}</span>
+                    <strong>{row.value}</strong>
+                  </div>
+                ))}
+
+                {detailPanel.mode === 'manage' && detailDraft ? (
+                  <>
+                    <label>
+                      Name
+                      <input
+                        value={detailDraft.name}
+                        onChange={(event) =>
+                          setDetailDraft((current) =>
+                            current ? { ...current, name: event.target.value } : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Creation date
+                      <input
+                        type="date"
+                        value={detailDraft.createdAt}
+                        onChange={(event) =>
+                          setDetailDraft((current) =>
+                            current ? { ...current, createdAt: event.target.value } : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Estimated completion
+                      <input
+                        type="date"
+                        value={detailDraft.estimatedCompletion}
+                        onChange={(event) =>
+                          setDetailDraft((current) =>
+                            current
+                              ? { ...current, estimatedCompletion: event.target.value }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      Artifacts
+                      {detailDraft.artifacts.map((name, index) => (
+                        <div
+                          key={`${name}-${index}`}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <small>{name}</small>
+                          <button
+                            className="close-button"
+                            onClick={() =>
+                              setDetailDraft((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      artifacts: current.artifacts.filter((_, i) => i !== index),
+                                    }
+                                  : current,
+                              )
+                            }
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ))}
+                      <input
+                        type="file"
+                        multiple
+                        onChange={(event) => {
+                          const names = event.target.files
+                            ? Array.from(event.target.files).map((f) => f.name)
+                            : []
+                          setDetailDraft((current) =>
+                            current
+                              ? { ...current, artifacts: [...current.artifacts, ...names] }
+                              : current,
+                          )
+                          event.target.value = ''
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Gallery
+                      {detailDraft.gallery.map((name, index) => (
+                        <div
+                          key={`${name}-${index}`}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <small>{name}</small>
+                          <button
+                            className="close-button"
+                            onClick={() =>
+                              setDetailDraft((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      gallery: current.gallery.filter((_, i) => i !== index),
+                                    }
+                                  : current,
+                              )
+                            }
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ))}
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(event) => {
+                          const names = event.target.files
+                            ? Array.from(event.target.files).map((f) => f.name)
+                            : []
+                          setDetailDraft((current) =>
+                            current
+                              ? { ...current, gallery: [...current.gallery, ...names] }
+                              : current,
+                          )
+                          event.target.value = ''
+                        }}
+                      />
+                    </label>
+                    <button
+                      className="primary-button"
+                      disabled={detailSaving}
+                      onClick={handleSaveDetail}
+                    >
+                      {detailSaving ? 'Saving...' : 'Save changes'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {[
+                      { label: 'County', value: activeDetailProject.county },
+                      { label: 'Status', value: activeDetailProject.status },
+                      { label: 'Created', value: activeDetailProject.createdAt || 'Not set' },
+                      {
+                        label: 'Estimated completion',
+                        value: activeDetailProject.estimatedCompletion || 'Not set',
+                      },
+                      {
+                        label: 'Artifacts',
+                        value: (activeDetailProject.artifacts ?? []).join(', ') || 'None yet',
+                      },
+                    ].map((row) => (
+                      <div
+                        key={row.label}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          background: 'rgba(90, 154, 112, 0.08)',
+                          borderRadius: 8,
+                          fontSize: 13,
+                          gap: 12,
+                        }}
+                      >
+                        <span style={{ color: 'rgba(15, 23, 20, 0.6)' }}>{row.label}</span>
+                        <strong style={{ textAlign: 'right' }}>{row.value}</strong>
+                      </div>
+                    ))}
+                    <button
+                      className="primary-button"
+                      onClick={() => {
+                        const project = activeDetailProject
+                        closeDetailPanel()
+                        setActionKind('rod')
+                        setActionProject(project.id)
+                      }}
+                    >
+                      <HandCoins size={16} /> Join &amp; fund
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {fundingRequestDetail && (
         <div className="modal-backdrop" onClick={() => setFundingRequestDetail(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
@@ -2321,6 +2818,71 @@ function App() {
           </div>
         </div>
       )}
+      {activityDetail &&
+        (() => {
+          const relatedProject = projects.find((project) =>
+            activityDetail.event.includes(project.id),
+          )
+          return (
+            <div className="modal-backdrop" onClick={() => setActivityDetail(null)}>
+              <div className="modal" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-heading">
+                  <div>
+                    <p className="eyebrow">ACTIVITY DETAIL</p>
+                    <h2>{activityDetail.event}</h2>
+                  </div>
+                  <button className="close-button" onClick={() => setActivityDetail(null)}>
+                    <X size={18} />
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '12px 0' }}>
+                  {[
+                    { label: 'Detail', value: activityDetail.detail },
+                    { label: 'When', value: activityDetail.age },
+                    ...(relatedProject
+                      ? [
+                          { label: 'Related project', value: relatedProject.name },
+                          { label: 'Status', value: relatedProject.status },
+                        ]
+                      : []),
+                  ].map((row) => (
+                    <div
+                      key={row.label}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        padding: '8px 12px',
+                        background: 'rgba(90, 154, 112, 0.08)',
+                        borderRadius: 8,
+                        fontSize: 13,
+                      }}
+                    >
+                      <span style={{ color: 'rgba(15, 23, 20, 0.6)' }}>{row.label}</span>
+                      <strong style={{ textAlign: 'right' }}>{row.value}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="modal-actions">
+                  <button className="secondary-button" onClick={() => setActivityDetail(null)}>
+                    Close
+                  </button>
+                  {relatedProject && user.role !== 'donor' && (
+                    <button
+                      className="primary-button"
+                      onClick={() => {
+                        setActivityDetail(null)
+                        setDetailPanel({ projectId: relatedProject.id, mode: 'manage' })
+                      }}
+                    >
+                      View project
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       {followUp && (
         <div className="modal-backdrop" onClick={() => setFollowUp(null)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>

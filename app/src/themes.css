@@ -1,0 +1,35 @@
+/*
+ * Theme overrides for MajiShwari.
+ *
+ * These use a filter-based approach (invert + hue-rotate) rather than
+ * hand-picked colors, because this file doesn't have visibility into the
+ * specific color values already baked into App.css. This genuinely works —
+ * it's a well-established technique for retrofitting dark mode onto an
+ * existing stylesheet without touching its color declarations — but it
+ * won't look as polished as colors chosen to match your actual design
+ * system. If you want a hand-tuned dark palette instead of this filter
+ * approach, share App.css and it can be redone with real color values.
+ */
+
+[data-theme='dark'] {
+  filter: invert(1) hue-rotate(180deg);
+  background: #fff;
+}
+
+[data-theme='light-sapphire'] {
+  filter: hue-rotate(200deg) saturate(1.35);
+}
+
+[data-theme='dark-sapphire'] {
+  filter: invert(1) hue-rotate(220deg) saturate(1.3);
+  background: #fff;
+}
+
+/* Photographic/map content looks wrong when the whole page is inverted, so
+   counter-invert it back to normal on top of the page-level filter. */
+[data-theme='dark'] img,
+[data-theme='dark'] .leaflet-container,
+[data-theme='dark-sapphire'] img,
+[data-theme='dark-sapphire'] .leaflet-container {
+  filter: invert(1) hue-rotate(180deg);
+}

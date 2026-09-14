@@ -1,3 +1,13 @@
+export type FundingRequestSummary = {
+  id: string
+  projectId: string
+  projectName: string
+  kind: 'request' | 'rod'
+  message: string
+  amountCents: number
+  status: 'Open' | 'Funded' | 'Pending approval'
+}
+
 export type WorkspacePayload = {
   source: 'neon' | 'demo'
   releases: Array<{
@@ -10,6 +20,7 @@ export type WorkspacePayload = {
   vulnerability: Array<{ county: string; score: number; label: 'High risk' | 'Watch' | 'Stable' }>
   rules: Array<{ title: string; detail: string }>
   activity: Array<{ event: string; detail: string; age: string }>
+  fundingRequests: FundingRequestSummary[]
 }
 
 export const demoWorkspace: WorkspacePayload = {
@@ -73,6 +84,26 @@ export const demoWorkspace: WorkspacePayload = {
       event: 'Daily reconciliation scheduled for 02:00 UTC',
       detail: 'System scheduler',
       age: '4 hours ago',
+    },
+  ],
+  fundingRequests: [
+    {
+      id: 'fr-demo-1',
+      projectId: 'WTR-117',
+      projectName: 'Tana River Water Pan',
+      kind: 'request',
+      message: 'Milestone 2 needs additional pump equipment before the rains.',
+      amountCents: 320_000_00,
+      status: 'Open',
+    },
+    {
+      id: 'fr-demo-2',
+      projectId: 'FRM-089',
+      projectName: 'Kitui Agroforestry Hub',
+      kind: 'request',
+      message: 'Seedling stock for the next planting window.',
+      amountCents: 145_000_00,
+      status: 'Open',
     },
   ],
 }

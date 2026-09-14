@@ -1,22 +1,30 @@
 import { demoDashboard } from './_lib/demo'
 import { hasDatabase, ensureSchema, sql } from './_lib/db'
-import { cacheHeaders, json, methodNotAllowed } from './_lib/http'
+import { cacheHeaders, json } from './_lib/http'
 import type { DashboardPayload } from './_lib/types'
 import { requireSession } from './_lib/auth'
 
-type ProjectRow = { id: string; name: string; county: string; status: string; required_confirmations: number; current_progress: number; amount_cents: number; confirmations: number }
+type ProjectRow = {
+  id: string
+  name: string
+  county: string
+  status: string
+  required_confirmations: number
+  current_progress: number
+  amount_cents: number
+  confirmations: number
+}
 type ReportRow = { raw_message: string; created_at: string; status: string; reporter_key: string }
 
-export default async function handler(request: Request) {
+export async function GET(request: Request) {
   const auth = await requireSession(request)
   if (auth.response) return auth.response
-  if (request.method !== 'GET') return methodNotAllowed(['GET'])
   if (!hasDatabase()) return json(demoDashboard, { headers: cacheHeaders(30) })
 
   try {
     await ensureSchema()
     const query = sql()
-    const projects = await query`
+    const projects = (await query`
       SELECT p.id, p.name, p.county, p.status, p.required_confirmations,
         p.current_progress, p.amount_cents,
         COUNT(r.id)::int AS confirmations
@@ -25,11 +33,11 @@ export default async function handler(request: Request) {
       GROUP BY p.id
       ORDER BY p.updated_at DESC
       LIMIT 50
-    ` as unknown as ProjectRow[]
-    const reports = await query`
+    `) as unknown as ProjectRow[]
+    const reports = (await query`
       SELECT r.raw_message, r.created_at, r.status, r.reporter_key
       FROM reports r ORDER BY r.created_at DESC LIMIT 10
-    ` as unknown as ReportRow[]
+    `) as unknown as ReportRow[]
     const payload: DashboardPayload = {
       source: 'neon',
       metrics: {

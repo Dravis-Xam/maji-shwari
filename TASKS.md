@@ -58,13 +58,13 @@ x  4. Add an "Activities" tab to track all ongoing/pending work in one place:
 x  5. When a project owner requests funding, donors' dashboards should show
      it as a card they can click into for full details, with options to
      join and fund.
-  6. On the community-member and government dashboards, projects should be
+x  6. On the community-member and government dashboards, projects should be
      clickable, opening a detail page (id, name, creation date, estimated
      completion date, artifacts, gallery) — all fields editable/addable if
      missing, except the auto-generated id.
-  7. In the Activity log, the arrow icon should open a side panel with full
+x  7. In the Activity log, the arrow icon should open a side panel with full
      details of that activity entry, instead of doing nothing.
-  8. Replace the profile icon in the header with a theme picker: light,
+x  8. Replace the profile icon in the header with a theme picker: light,
      dark, light-sapphire, and dark-sapphire modes.
   9. Make notifications functional: live events from the API pushed over a
      WebSocket. UI: click a notification to view the full message and mark
