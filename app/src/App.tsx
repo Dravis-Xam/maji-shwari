@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Pusher from 'pusher-js'
 import {
   Activity,
   AlertTriangle,
@@ -172,7 +173,14 @@ const riskCoordinates: Record<string, [number, number]> = {
   Makueni: [-2.2, 37.9],
 }
 type Role = 'community' | 'government' | 'donor'
-type User = { name: string; email?: string; role: Role | 'pending' | 'verifying' }
+type User = { sub?: string; name: string; email?: string; role: Role | 'pending' | 'verifying' }
+type NotificationItem = {
+  id: string
+  title: string
+  message: string
+  read: boolean
+  createdAt: string
+}
 type Theme = 'light' | 'dark' | 'light-sapphire' | 'dark-sapphire'
 
 type FundingRequestSummary = {
@@ -401,6 +409,9 @@ function App() {
     return 'light'
   })
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notificationDetail, setNotificationDetail] = useState<NotificationItem | null>(null)
   const [showReport, setShowReport] = useState(false)
   const [actionKind, setActionKind] = useState<'project' | 'request' | 'rod' | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -517,6 +528,34 @@ function App() {
         setDataSource(payload.source)
       })
       .catch(() => setDataSource('demo'))
+  }, [user])
+
+  useEffect(() => {
+    if (!user || !user.sub || user.role === 'pending' || user.role === 'verifying') return
+
+    fetch('/api/notifications')
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((payload) => setNotifications(payload.notifications ?? []))
+      .catch(() => {})
+
+    const pusherKey = import.meta.env.VITE_PUSHER_KEY as string | undefined
+    const pusherCluster = import.meta.env.VITE_PUSHER_CLUSTER as string | undefined
+    if (!pusherKey || !pusherCluster) return
+
+    const pusher = new Pusher(pusherKey, {
+      cluster: pusherCluster,
+      authEndpoint: '/api/pusher/auth',
+    })
+    const channelName = `private-user-${user.sub.replace(/[^a-zA-Z0-9_=@,.;-]/g, '_')}`
+    const channel = pusher.subscribe(channelName)
+    channel.bind('notification', (notification: NotificationItem) => {
+      setNotifications((current) => [notification, ...current])
+    })
+
+    return () => {
+      pusher.unsubscribe(channelName)
+      pusher.disconnect()
+    }
   }, [user])
 
   // Debounce: wait for the user to pause typing before doing any matching or fetching.
@@ -818,6 +857,29 @@ function App() {
     await fetch('/api/auth/logout', { method: 'POST' })
     setUser(null)
     setActiveNav('Overview')
+  }
+
+  const handleOpenNotification = (item: NotificationItem) => {
+    setNotificationDetail(item)
+    if (!item.read) {
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === item.id ? { ...notification, read: true } : notification,
+        ),
+      )
+      fetch(`/api/notifications/${item.id}`, { method: 'PATCH' }).catch(() => {})
+    }
+  }
+
+  const handleDismissNotification = (id: string) => {
+    setNotifications((current) => current.filter((notification) => notification.id !== id))
+    fetch(`/api/notifications/${id}`, { method: 'DELETE' }).catch(() => {})
+  }
+
+  const handleClearAllNotifications = () => {
+    setNotifications([])
+    setNotificationsOpen(false)
+    fetch('/api/notifications', { method: 'DELETE' }).catch(() => {})
   }
 
   const activeDetailProject = detailPanel
@@ -1284,10 +1346,133 @@ function App() {
                 </div>
               )}
             </div>
-            <button className="icon-button" aria-label="Notifications">
-              <Bell size={18} />
-              <i />
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button
+                className="icon-button"
+                aria-label="Notifications"
+                onClick={() => setNotificationsOpen((open) => !open)}
+                onBlur={() => window.setTimeout(() => setNotificationsOpen(false), 150)}
+              >
+                <Bell size={18} />
+                {notifications.some((notification) => !notification.read) && <i />}
+              </button>
+              {notificationsOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    width: 320,
+                    maxHeight: 400,
+                    overflowY: 'auto',
+                    background: '#fffaf3',
+                    border: '1px solid rgba(15, 23, 20, 0.12)',
+                    borderRadius: 12,
+                    boxShadow: '0 12px 32px rgba(15, 23, 20, 0.18)',
+                    zIndex: 90,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '10px 14px',
+                      borderBottom: '1px solid rgba(15, 23, 20, 0.08)',
+                    }}
+                  >
+                    <strong style={{ fontSize: 13 }}>Notifications</strong>
+                    {notifications.length > 0 && (
+                      <button
+                        className="text-button"
+                        style={{ padding: 0, fontSize: 12 }}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={handleClearAllNotifications}
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div
+                      style={{ padding: '18px 14px', fontSize: 13, color: 'rgba(15, 23, 20, 0.6)' }}
+                    >
+                      No notifications yet.
+                    </div>
+                  ) : (
+                    notifications.map((notification) => (
+                      <div
+                        key={notification.id}
+                        className="notification-row"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 8,
+                          padding: '10px 14px',
+                          borderBottom: '1px solid rgba(15, 23, 20, 0.06)',
+                          background: notification.read
+                            ? 'transparent'
+                            : 'rgba(90, 154, 112, 0.06)',
+                        }}
+                      >
+                        <button
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleOpenNotification(notification)}
+                          style={{
+                            flex: 1,
+                            textAlign: 'left',
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 0,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {!notification.read && (
+                              <span
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: '50%',
+                                  background: '#5a9a70',
+                                  flexShrink: 0,
+                                }}
+                              />
+                            )}
+                            <strong style={{ fontSize: 13 }}>{notification.title}</strong>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: 'rgba(15, 23, 20, 0.6)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {notification.message}
+                          </div>
+                        </button>
+                        <button
+                          className="notification-dismiss"
+                          aria-label="Dismiss notification"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleDismissNotification(notification.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 2,
+                          }}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             <div style={{ position: 'relative' }}>
               <button
                 className="icon-button"
@@ -2813,6 +2998,39 @@ function App() {
                 }}
               >
                 <HandCoins size={16} /> Join &amp; fund
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {notificationDetail && (
+        <div className="modal-backdrop" onClick={() => setNotificationDetail(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">NOTIFICATION</p>
+                <h2>{notificationDetail.title}</h2>
+              </div>
+              <button className="close-button" onClick={() => setNotificationDetail(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <p>{notificationDetail.message}</p>
+            <small style={{ color: 'rgba(15, 23, 20, 0.55)' }}>
+              {new Date(notificationDetail.createdAt).toLocaleString()}
+            </small>
+            <div className="modal-actions">
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  handleDismissNotification(notificationDetail.id)
+                  setNotificationDetail(null)
+                }}
+              >
+                Dismiss
+              </button>
+              <button className="primary-button" onClick={() => setNotificationDetail(null)}>
+                Close
               </button>
             </div>
           </div>

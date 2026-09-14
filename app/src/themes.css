@@ -33,3 +33,15 @@
 [data-theme='dark-sapphire'] .leaflet-container {
   filter: invert(1) hue-rotate(180deg);
 }
+
+/* Per-notification dismiss ("x") only appears on hover of its row. */
+.notification-dismiss {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.notification-row:hover .notification-dismiss {
+  opacity: 0.6;
+}
+.notification-dismiss:hover {
+  opacity: 1;
+}

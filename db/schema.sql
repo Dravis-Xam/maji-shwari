@@ -69,3 +69,14 @@ CREATE TABLE IF NOT EXISTS funding_requests (
   status TEXT NOT NULL DEFAULT 'Open',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGSERIAL PRIMARY KEY,
+  user_sub TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications(user_sub, created_at DESC);

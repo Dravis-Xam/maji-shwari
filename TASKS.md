@@ -30,7 +30,7 @@ npm run dev
 npm run build
 ```
 
-## Up next (not started)
+## Up next (started)
 
 - [x] Add a Solidity smart contract for the audit ledger, run in a Hardhat
       environment set up via Polygon's dApp Launchpad, with Ethernal wired up
