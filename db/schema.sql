@@ -13,6 +13,10 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_role TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS artifacts TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS contact TEXT;
+-- Owner/government-driven lifecycle stage (Draft -> Submitted -> In progress
+-- -> Completed), independent of `status` above, which tracks community
+-- verification (In review / Verified) and is unaffected by lifecycle moves.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'Draft';
 
 CREATE TABLE IF NOT EXISTS reports (
   id BIGSERIAL PRIMARY KEY,
@@ -69,14 +73,3 @@ CREATE TABLE IF NOT EXISTS funding_requests (
   status TEXT NOT NULL DEFAULT 'Open',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-CREATE TABLE IF NOT EXISTS notifications (
-  id BIGSERIAL PRIMARY KEY,
-  user_sub TEXT NOT NULL,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  read_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications(user_sub, created_at DESC);

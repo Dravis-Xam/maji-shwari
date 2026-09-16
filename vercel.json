@@ -2,6 +2,20 @@
   "buildCommand": "npm run build",
   "outputDirectory": "app/dist",
   "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/auth/:action",
+      "destination": "/api/auth?action=:action"
+    },
+    {
+      "source": "/api/notifications/:id",
+      "destination": "/api/notifications?id=:id"
+    },
+    {
+      "source": "/api/pusher/auth",
+      "destination": "/api/notifications?action=pusher-auth"
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/reconcile",

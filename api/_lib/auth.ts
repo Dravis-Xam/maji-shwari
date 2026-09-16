@@ -216,6 +216,40 @@ export function canDonate(role: Role) {
 
 export const ALL_ROLES: Role[] = ['community', 'government', 'donor']
 
+// Google-account role allowlists. Each env var is a comma-separated list of
+// approved Google emails for that role, e.g.:
+//   GOOGLE_COMMUNITY_EMAILS=alice@example.com,bob@example.com
+//   GOOGLE_GOVERNMENT_EMAILS=carol@example.com
+//   GOOGLE_DONOR_EMAILS=dave@example.com,carol@example.com
+// An email can appear on more than one list (e.g. carol above is approved
+// for both government and donor) — googleRoles() returns every match.
+const GOOGLE_ROLE_ENV_VARS: Record<Role, string | undefined> = {
+  community: env.GOOGLE_COMMUNITY_EMAILS,
+  government: env.GOOGLE_GOVERNMENT_EMAILS,
+  donor: env.GOOGLE_DONOR_EMAILS,
+}
+
+function parseEmailList(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+// Every role this Google email is approved for. Used to show the role
+// picker on the onboarding screen (see me.ts's availableRoles).
+export function googleRoles(email: string): Role[] {
+  const normalized = email.trim().toLowerCase()
+  return ALL_ROLES.filter((role) => parseEmailList(GOOGLE_ROLE_ENV_VARS[role]).includes(normalized))
+}
+
+// The single role for this email, if it's approved for exactly one. Prefer
+// googleRoles(email).includes(role) when validating a specific selection,
+// since an email can legitimately be approved for more than one role.
+export function googleRole(email: string): Role | undefined {
+  return googleRoles(email)[0]
+}
+
 export async function requireSession(request: Request) {
   const session = await readSession(request)
   return session
