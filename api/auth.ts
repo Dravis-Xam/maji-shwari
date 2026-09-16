@@ -17,13 +17,28 @@ const env =
   (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } })
     .process?.env ?? {}
 
+// On Vercel's Node.js runtime, request.url is not always guaranteed to be
+// an absolute URL — it can arrive as just a path (e.g. via a rewrite),
+// which makes `new URL(request.url)` throw "Invalid URL". Fall back to
+// building it from the host header when that happens.
+function requestUrl(request: Request) {
+  try {
+    return new URL(request.url)
+  } catch {
+    const host =
+      request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? 'localhost'
+    const protocol = request.headers.get('x-forwarded-proto') ?? 'https'
+    return new URL(request.url, `${protocol}://${host}`)
+  }
+}
+
 // Single entry point for every /api/auth/* route. vercel.json rewrites
 // /api/auth/:action -> /api/auth?action=:action (preserving the original
 // query string), so this one file replaces what used to be four separate
 // serverless functions (login.ts, logout.ts, me.ts, google.ts) and keeps
 // the frontend's existing fetch('/api/auth/...') calls unchanged.
 export default async function handler(request: Request) {
-  const url = new URL(request.url)
+  const url = requestUrl(request)
   const action = url.searchParams.get('action')
 
   switch (action) {
@@ -112,7 +127,7 @@ async function me(request: Request) {
 
 // ---- /api/auth/google ----
 async function google(request: Request) {
-  const url = new URL(request.url)
+  const url = requestUrl(request)
   if (url.searchParams.get('start') === '1') return startGoogle(request)
 
   const code = url.searchParams.get('code')
@@ -182,7 +197,7 @@ async function startGoogle(request: Request) {
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI || !env.JWT_SECRET) {
     return json({ error: 'Google OAuth is not configured.' }, { status: 503 })
   }
-  const state = await createSignedState(new URL(request.url).origin)
+  const state = await createSignedState(requestUrl(request).origin)
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
     redirect_uri: env.GOOGLE_REDIRECT_URI,

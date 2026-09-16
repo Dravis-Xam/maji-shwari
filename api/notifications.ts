@@ -4,6 +4,21 @@ import { json } from './_lib/http'
 import { readSession } from './_lib/auth'
 import type { Notification } from './_lib/pusher'
 
+// On Vercel's Node.js runtime, request.url is not always guaranteed to be
+// an absolute URL — it can arrive as just a path (e.g. via a rewrite),
+// which makes `new URL(request.url)` throw "Invalid URL". Fall back to
+// building it from the host header when that happens.
+function requestUrl(request: Request) {
+  try {
+    return new URL(request.url)
+  } catch {
+    const host =
+      request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? 'localhost'
+    const protocol = request.headers.get('x-forwarded-proto') ?? 'https'
+    return new URL(request.url, `${protocol}://${host}`)
+  }
+}
+
 type NotificationRow = {
   id: number
   title: string
@@ -54,7 +69,7 @@ export async function GET(request: Request) {
 
 // ---- POST: either /api/pusher/auth or /api/notifications/test ----
 export async function POST(request: Request) {
-  const url = new URL(request.url)
+  const url = requestUrl(request)
   const action = url.searchParams.get('action')
   const id = url.searchParams.get('id')
 
@@ -69,7 +84,7 @@ export async function PATCH(request: Request) {
   const session = await readSession(request)
   if (!session) return json({ error: 'Authentication required' }, { status: 401 })
 
-  const id = new URL(request.url).searchParams.get('id')
+  const id = requestUrl(request).searchParams.get('id')
   if (!id) return json({ error: 'Notification id is required.' }, { status: 400 })
   if (!hasDatabase()) return json({ ok: true })
 
@@ -93,7 +108,7 @@ export async function DELETE(request: Request) {
   const session = await readSession(request)
   if (!session) return json({ error: 'Authentication required' }, { status: 401 })
 
-  const id = new URL(request.url).searchParams.get('id')
+  const id = requestUrl(request).searchParams.get('id')
 
   if (!id) {
     if (!hasDatabase()) return json({ ok: true })
