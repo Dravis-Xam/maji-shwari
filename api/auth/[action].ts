@@ -1,14 +1,16 @@
 import {
+  ALL_ROLES,
   clearPendingCookie,
   clearSessionCookie,
   createPendingSession,
   createSession,
   createSignedState,
-  googleRoles,
+  findUserRole,
   pendingCookie,
   readPendingSession,
   readSession,
   requestUrl,
+  saveUserRole,
   sessionCookie,
   verifySignedState,
 } from '../_lib/auth'
@@ -59,9 +61,10 @@ async function login(request: Request) {
     const pending = await readPendingSession(request)
     if (!pending)
       return json({ error: 'Google onboarding session expired. Sign in again.' }, { status: 401 })
-    if (!body.role || !googleRoles(pending.email).includes(body.role)) {
-      return json({ error: 'That role is not approved for this Google account.' }, { status: 403 })
+    if (!body.role || !ALL_ROLES.includes(body.role)) {
+      return json({ error: 'Choose a valid role to continue.' }, { status: 422 })
     }
+    await saveUserRole(pending, body.role)
     const token = await createSession({ ...pending, role: body.role })
     const headers = new Headers({ 'cache-control': 'no-store' })
     headers.append('set-cookie', sessionCookie(token))
@@ -105,7 +108,7 @@ async function me(request: Request) {
   const pending = await readPendingSession(request)
   if (pending) {
     return json(
-      { user: { ...pending, role: 'pending' }, availableRoles: googleRoles(pending.email) },
+      { user: { ...pending, role: 'pending' }, availableRoles: ALL_ROLES },
       { headers: { 'cache-control': 'no-store' } },
     )
   }
@@ -164,15 +167,12 @@ async function google(request: Request) {
 
     const sub = `google:${profile.sub}`
     const name = profile.name || profile.email
-    const roles = googleRoles(profile.email)
+    const savedRole = await findUserRole(sub)
 
-    // Exactly one approved role: nothing to pick, so skip the onboarding
-    // screen entirely and sign the user straight into a full session.
-    // Zero or 2+ roles still go through onboarding — zero so the picker's
-    // existing "no role is approved" message can explain why, and 2+
-    // because there's a genuine choice to make.
-    if (roles.length === 1) {
-      const token = await createSession({ sub, name, email: profile.email, role: roles[0] })
+    // Returning user: they already picked a role on a previous login, so
+    // skip the picker entirely and sign straight into a full session.
+    if (savedRole) {
+      const token = await createSession({ sub, name, email: profile.email, role: savedRole })
       return new Response(null, {
         status: 302,
         headers: {
@@ -183,6 +183,10 @@ async function google(request: Request) {
       })
     }
 
+    // First-time user: no saved role yet, so show the picker once. Their
+    // choice gets persisted in the role-selection step of POST
+    // /api/auth/login, and every login after this one will hit the
+    // savedRole branch above instead.
     const token = await createPendingSession({ sub, name, email: profile.email })
     return new Response(null, {
       status: 302,

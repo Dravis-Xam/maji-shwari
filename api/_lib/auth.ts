@@ -1,3 +1,5 @@
+import { ensureSchema, hasDatabase, sql } from './db'
+
 export type Role = 'community' | 'government' | 'donor'
 export type Session = { sub: string; name: string; email: string; role: Role }
 const COOKIE = 'maji_session'
@@ -240,38 +242,42 @@ export function canDonate(role: Role) {
 
 export const ALL_ROLES: Role[] = ['community', 'government', 'donor']
 
-// Google-account role allowlists. Each env var is a comma-separated list of
-// approved Google emails for that role, e.g.:
-//   GOOGLE_COMMUNITY_EMAILS=alice@example.com,bob@example.com
-//   GOOGLE_GOVERNMENT_EMAILS=carol@example.com
-//   GOOGLE_DONOR_EMAILS=dave@example.com,carol@example.com
-// An email can appear on more than one list (e.g. carol above is approved
-// for both government and donor) — googleRoles() returns every match.
-const GOOGLE_ROLE_ENV_VARS: Record<Role, string | undefined> = {
-  community: env.GOOGLE_COMMUNITY_EMAILS,
-  government: env.GOOGLE_GOVERNMENT_EMAILS,
-  donor: env.GOOGLE_DONOR_EMAILS,
+// A Google account's role is decided once, by the user, on their first
+// login (see the role-selection step of POST /api/auth/login), and then
+// persisted here keyed by their stable Google `sub`. Every login after
+// that looks up the saved role and skips the picker entirely — no
+// allowlist to maintain, and it scales to any number of users per role.
+export async function findUserRole(sub: string): Promise<Role | null> {
+  if (!hasDatabase()) return null
+  try {
+    await ensureSchema()
+    const query = sql()
+    const rows = (await query`
+      SELECT role FROM users WHERE sub = ${sub}
+    `) as unknown as { role: Role }[]
+    return rows[0]?.role ?? null
+  } catch (error) {
+    console.error('find_user_role_failed', error)
+    return null
+  }
 }
 
-function parseEmailList(value: string | undefined): string[] {
-  return (value ?? '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean)
-}
-
-// Every role this Google email is approved for. Used to show the role
-// picker on the onboarding screen (see me.ts's availableRoles).
-export function googleRoles(email: string): Role[] {
-  const normalized = email.trim().toLowerCase()
-  return ALL_ROLES.filter((role) => parseEmailList(GOOGLE_ROLE_ENV_VARS[role]).includes(normalized))
-}
-
-// The single role for this email, if it's approved for exactly one. Prefer
-// googleRoles(email).includes(role) when validating a specific selection,
-// since an email can legitimately be approved for more than one role.
-export function googleRole(email: string): Role | undefined {
-  return googleRoles(email)[0]
+export async function saveUserRole(
+  user: { sub: string; name: string; email: string },
+  role: Role,
+): Promise<void> {
+  if (!hasDatabase()) return
+  try {
+    await ensureSchema()
+    const query = sql()
+    await query`
+      INSERT INTO users (sub, name, email, role)
+      VALUES (${user.sub}, ${user.name}, ${user.email}, ${role})
+      ON CONFLICT (sub) DO UPDATE SET role = EXCLUDED.role, name = EXCLUDED.name
+    `
+  } catch (error) {
+    console.error('save_user_role_failed', error)
+  }
 }
 
 export async function requireSession(request: Request) {

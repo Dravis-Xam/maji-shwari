@@ -40,6 +40,7 @@ async function createSchema() {
   await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS plan TEXT`
   await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS artifacts TEXT`
   await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS contact TEXT`
+  await query`ALTER TABLE projects ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'Draft'`
   await query`
     CREATE TABLE IF NOT EXISTS reports (
       id BIGSERIAL PRIMARY KEY,
@@ -112,4 +113,16 @@ async function createSchema() {
     )
   `
   await query`CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications(user_sub, created_at DESC)`
+  // A Google account's chosen role, saved once on first login (self-service
+  // role selection) and looked up on every subsequent login so the picker
+  // only shows once per account.
+  await query`
+    CREATE TABLE IF NOT EXISTS users (
+      sub TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('community', 'government', 'donor')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
 }

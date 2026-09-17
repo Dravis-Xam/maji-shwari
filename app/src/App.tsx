@@ -439,7 +439,10 @@ function App() {
           </span>
           <p className="eyebrow">WELCOME TO MAJISHWARI</p>
           <h1>Choose your workspace</h1>
-          <p>Your Google account is verified. Choose an approved role to continue.</p>
+          <p>
+            Your Google account is verified. Pick how you'll use MajiShwari — this is a one-time
+            choice, and every login after this goes straight to your dashboard.
+          </p>
           <div className="role-options">
             {availableRoles.map((role) => (
               <button
@@ -464,11 +467,6 @@ function App() {
               </button>
             ))}
           </div>
-          {availableRoles.length === 0 && (
-            <p className="auth-error">
-              No role is approved for {user.email}. Contact the platform administrator.
-            </p>
-          )}
           <button
             className="primary-button auth-button"
             disabled={!selectedRole}
