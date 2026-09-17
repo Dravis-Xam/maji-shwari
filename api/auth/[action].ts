@@ -12,7 +12,7 @@ import {
   sessionCookie,
   verifySignedState,
 } from '../_lib/auth'
-import { json, methodNotAllowed } from '../_lib/http'
+import { json } from '../_lib/http'
 
 const env =
   (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } })
@@ -24,31 +24,30 @@ function actionFromUrl(request: Request) {
 }
 
 // Single entry point for /api/auth/login, /api/auth/logout, /api/auth/me,
-// and /api/auth/google. This is a native Vercel dynamic route (the [action]
-// filename), NOT a vercel.json rewrite — a rewrite was found to hand this
-// function a malformed request (relative request.url, headers without a
-// real Headers instance), so this reads the action straight from the
-// genuine request path instead. Folding these into one file still saves
-// three of the twelve Hobby-plan serverless function slots.
-export default async function handler(request: Request) {
-  switch (actionFromUrl(request)) {
-    case 'login':
-      return login(request)
-    case 'logout':
-      return logout(request)
-    case 'me':
-      return me(request)
-    case 'google':
-      return google(request)
-    default:
-      return json({ error: 'Unknown auth action.' }, { status: 404 })
-  }
+// and /api/auth/google, dispatched by HTTP method + the [action] path
+// segment. IMPORTANT: this must use named GET/POST exports, not a default
+// export — `export default function handler(request: Request)` is treated
+// by Vercel as the legacy `(req, res) => void` signature, which silently
+// discards a returned Response and hands the function a raw req object
+// (relative url, plain-object headers) instead of a real Fetch Request.
+// Named method exports are what actually get the modern Request/Response
+// behavior this code assumes throughout.
+export async function GET(request: Request) {
+  const action = actionFromUrl(request)
+  if (action === 'me') return me(request)
+  if (action === 'google') return google(request)
+  return json({ error: 'Unknown auth action.' }, { status: 404 })
+}
+
+export async function POST(request: Request) {
+  const action = actionFromUrl(request)
+  if (action === 'login') return login(request)
+  if (action === 'logout') return logout(request)
+  return json({ error: 'Unknown auth action.' }, { status: 404 })
 }
 
 // ---- /api/auth/login ----
 async function login(request: Request) {
-  if (request.method !== 'POST') return methodNotAllowed(['POST'])
-
   let body: { name?: string; role?: 'community' | 'government' | 'donor'; action?: 'role' }
   try {
     body = await request.json()
@@ -91,8 +90,7 @@ async function login(request: Request) {
 }
 
 // ---- /api/auth/logout ----
-async function logout(request: Request) {
-  if (request.method !== 'POST') return methodNotAllowed(['POST'])
+async function logout(_request: Request) {
   return json(
     { ok: true },
     { headers: { 'set-cookie': clearSessionCookie(), 'cache-control': 'no-store' } },

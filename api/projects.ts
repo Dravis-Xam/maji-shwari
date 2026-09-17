@@ -1,19 +1,31 @@
 import { canCreateProject, requireSession } from './_lib/auth'
 import type { Session } from './_lib/auth'
 import { ensureSchema, hasDatabase, sql } from './_lib/db'
-import { json, methodNotAllowed } from './_lib/http'
+import { json } from './_lib/http'
 
 const states = ['Draft', 'Submitted', 'In progress', 'Completed'] as const
 type ProjectState = (typeof states)[number]
 
-export default async function handler(request: Request) {
+// IMPORTANT: named GET/POST/PATCH exports, not a default export — Vercel
+// treats `export default function handler(request: Request)` as the
+// legacy `(req, res) => void` signature, which silently discards a
+// returned Response instead of sending it.
+export async function GET(request: Request) {
   const auth = await requireSession(request)
   if (auth.response) return auth.response
+  return json({ projects: [] })
+}
 
-  if (request.method === 'GET') return json({ projects: [] })
-  if (request.method === 'POST') return createProject(request, auth.session)
-  if (request.method === 'PATCH') return transitionProject(request, auth.session)
-  return methodNotAllowed(['GET', 'POST', 'PATCH'])
+export async function POST(request: Request) {
+  const auth = await requireSession(request)
+  if (auth.response) return auth.response
+  return createProject(request, auth.session)
+}
+
+export async function PATCH(request: Request) {
+  const auth = await requireSession(request)
+  if (auth.response) return auth.response
+  return transitionProject(request, auth.session)
 }
 
 // ---- POST /api/projects (create) ----
