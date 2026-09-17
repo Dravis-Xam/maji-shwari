@@ -1,6 +1,6 @@
 import { authorizeChannel, channelForUser, hasPusher } from '../_lib/pusher'
 import { json } from '../_lib/http'
-import { readSession } from '../_lib/auth'
+import { getRequestHeader, readSession } from '../_lib/auth'
 
 export async function POST(request: Request) {
   if (!hasPusher())
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   if (!session) return json({ error: 'Authentication required' }, { status: 401 })
 
   let body: { socket_id?: string; channel_name?: string }
-  const contentType = request.headers.get('content-type') ?? ''
+  const contentType = getRequestHeader(request, 'content-type') ?? ''
 
   if (contentType.includes('application/json')) {
     try {

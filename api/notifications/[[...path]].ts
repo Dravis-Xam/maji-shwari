@@ -1,6 +1,6 @@
 import { hasDatabase, ensureSchema, sql } from '../_lib/db'
 import { json } from '../_lib/http'
-import { readSession } from '../_lib/auth'
+import { readSession, requestUrl } from '../_lib/auth'
 import { hasPusher, notifyUser } from '../_lib/pusher'
 import type { Notification } from '../_lib/pusher'
 
@@ -21,7 +21,7 @@ type NotificationRow = {
 // slots. (Pusher's own /api/pusher/auth stays a separate file — it's
 // called directly by the Pusher client and gains nothing from merging.)
 function segmentFromUrl(request: Request) {
-  const segments = new URL(request.url).pathname.split('/')
+  const segments = requestUrl(request).pathname.split('/')
   const last = segments[segments.length - 1]
   return last === 'notifications' ? null : last
 }

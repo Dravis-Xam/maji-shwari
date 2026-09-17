@@ -23,6 +23,33 @@ function decode(value: string) {
   )
 }
 
+// On this Vercel runtime, request.url is sometimes only a path + query
+// string (not a full absolute URL), and request.headers is sometimes a
+// plain object rather than a real Headers instance with .get(). Both
+// break naive `new URL(request.url)` / `request.headers.get(...)` calls,
+// which previously crashed every endpoint that reads a cookie. These two
+// helpers normalize both cases and are used everywhere in this file, and
+// re-exported for the API route files that also touch headers/URLs.
+export function getRequestHeader(request: Request, name: string): string | undefined {
+  const headers = request.headers as unknown
+  if (headers && typeof (headers as Headers).get === 'function') {
+    return (headers as Headers).get(name) ?? undefined
+  }
+  const plain = headers as Record<string, string | string[] | undefined> | undefined
+  const value = plain?.[name] ?? plain?.[name.toLowerCase()]
+  return Array.isArray(value) ? value[0] : value
+}
+
+export function requestUrl(request: Request): URL {
+  if (/^https?:\/\//i.test(request.url)) return new URL(request.url)
+  const host =
+    getRequestHeader(request, 'x-forwarded-host') ??
+    getRequestHeader(request, 'host') ??
+    'localhost'
+  const protocol = getRequestHeader(request, 'x-forwarded-proto') ?? 'https'
+  return new URL(request.url, `${protocol}://${host}`)
+}
+
 export function generateCode() {
   const bytes = new Uint32Array(1)
   crypto.getRandomValues(bytes)
@@ -90,8 +117,7 @@ export async function createPendingSession(session: Omit<Session, 'role'>) {
 }
 
 export async function readPendingSession(request: Request): Promise<Omit<Session, 'role'> | null> {
-  const token = request.headers
-    .get('cookie')
+  const token = getRequestHeader(request, 'cookie')
     ?.split(';')
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${PENDING_COOKIE}=`))
@@ -138,8 +164,7 @@ export async function createVerificationSession(
 export async function readVerificationSession(
   request: Request,
 ): Promise<PendingVerification | null> {
-  const token = request.headers
-    .get('cookie')
+  const token = getRequestHeader(request, 'cookie')
     ?.split(';')
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${VERIFY_COOKIE}=`))
@@ -174,8 +199,7 @@ export async function createSession(session: Session) {
 }
 
 export async function readSession(request: Request): Promise<Session | null> {
-  const token = request.headers
-    .get('cookie')
+  const token = getRequestHeader(request, 'cookie')
     ?.split(';')
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${COOKIE}=`))

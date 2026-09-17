@@ -8,6 +8,7 @@ import {
   pendingCookie,
   readPendingSession,
   readSession,
+  requestUrl,
   sessionCookie,
   verifySignedState,
 } from '../_lib/auth'
@@ -18,7 +19,7 @@ const env =
     .process?.env ?? {}
 
 function actionFromUrl(request: Request) {
-  const segments = new URL(request.url).pathname.split('/')
+  const segments = requestUrl(request).pathname.split('/')
   return segments[segments.length - 1]
 }
 
@@ -116,7 +117,7 @@ async function me(request: Request) {
 
 // ---- /api/auth/google ----
 async function google(request: Request) {
-  const url = new URL(request.url)
+  const url = requestUrl(request)
   if (url.searchParams.get('start') === '1') return startGoogle(request)
 
   const code = url.searchParams.get('code')
@@ -186,7 +187,7 @@ async function startGoogle(request: Request) {
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_REDIRECT_URI || !env.JWT_SECRET) {
     return json({ error: 'Google OAuth is not configured.' }, { status: 503 })
   }
-  const state = await createSignedState(new URL(request.url).origin)
+  const state = await createSignedState(requestUrl(request).origin)
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
     redirect_uri: env.GOOGLE_REDIRECT_URI,
