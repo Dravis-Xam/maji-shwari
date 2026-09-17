@@ -2,19 +2,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "app/dist",
   "framework": "vite",
-  "rewrites": [
-    {
-      "buildCommand": "npm run build",
-      "outputDirectory": "app/dist",
-      "framework": "vite",
-      "crons": [
-        {
-          "path": "/api/cron/reconcile",
-          "schedule": "0 2 * * *"
-        }
-      ]
-    }
-  ],
   "crons": [
     {
       "path": "/api/cron/reconcile",
