@@ -4,16 +4,15 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/auth/:action",
-      "destination": "/api/auth?action=:action"
-    },
-    {
-      "source": "/api/notifications/:id",
-      "destination": "/api/notifications?id=:id"
-    },
-    {
-      "source": "/api/pusher/auth",
-      "destination": "/api/notifications?action=pusher-auth"
+      "buildCommand": "npm run build",
+      "outputDirectory": "app/dist",
+      "framework": "vite",
+      "crons": [
+        {
+          "path": "/api/cron/reconcile",
+          "schedule": "0 2 * * *"
+        }
+      ]
     }
   ],
   "crons": [
