@@ -162,11 +162,28 @@ async function google(request: Request) {
       return json({ error: 'A verified Google email is required.' }, { status: 403 })
     }
 
-    const token = await createPendingSession({
-      sub: `google:${profile.sub}`,
-      name: profile.name || profile.email,
-      email: profile.email,
-    })
+    const sub = `google:${profile.sub}`
+    const name = profile.name || profile.email
+    const roles = googleRoles(profile.email)
+
+    // Exactly one approved role: nothing to pick, so skip the onboarding
+    // screen entirely and sign the user straight into a full session.
+    // Zero or 2+ roles still go through onboarding — zero so the picker's
+    // existing "no role is approved" message can explain why, and 2+
+    // because there's a genuine choice to make.
+    if (roles.length === 1) {
+      const token = await createSession({ sub, name, email: profile.email, role: roles[0] })
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: '/',
+          'set-cookie': sessionCookie(token),
+          'cache-control': 'no-store',
+        },
+      })
+    }
+
+    const token = await createPendingSession({ sub, name, email: profile.email })
     return new Response(null, {
       status: 302,
       headers: {
