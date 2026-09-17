@@ -176,7 +176,7 @@ async function google(request: Request) {
       return new Response(null, {
         status: 302,
         headers: {
-          location: '/',
+          location: '/?onboarding=welcome',
           'set-cookie': sessionCookie(token),
           'cache-control': 'no-store',
         },
