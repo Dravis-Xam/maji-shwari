@@ -128,22 +128,42 @@ const demoWorkspace = {
     },
   ],
   vulnerability: [
-    ['Turkana', '82', 'High risk', 'risk-high'],
-    ['Tana River', '73', 'Watch', 'risk-mid'],
-    ['Kitui', '64', 'Watch', 'risk-mid'],
-    ['Makueni', '41', 'Stable', 'risk-low'],
+    { county: 'Turkana', score: 82, label: 'High risk' as const },
+    { county: 'Tana River', score: 73, label: 'Watch' as const },
+    { county: 'Kitui', score: 64, label: 'Watch' as const },
+    { county: 'Makueni', score: 41, label: 'Stable' as const },
   ],
   rules: [
-    ['Unique reporters', 'Count one confirmation per reporter, project, and status.'],
-    ['Threshold', 'A project reaches verified after its configured confirmation count.'],
-    ['Audit flags', 'DELAYED, INCOMPLETE, and PROBLEM reports create an audit flag.'],
-    ['Evidence format', 'Messages must use PROJECT-CODE STATUS, such as BHR-042 DONE.'],
+    {
+      title: 'Unique reporters',
+      detail: 'Count one confirmation per reporter, project, and status.',
+    },
+    {
+      title: 'Threshold',
+      detail: 'A project reaches verified after its configured confirmation count.',
+    },
+    {
+      title: 'Audit flags',
+      detail: 'DELAYED, INCOMPLETE, and PROBLEM reports create an audit flag.',
+    },
+    {
+      title: 'Evidence format',
+      detail: 'Messages must use PROJECT-CODE STATUS, such as BHR-042 DONE.',
+    },
   ],
   activity: [
-    ['Dashboard data synchronized', 'MajiShwari system', '1 hour ago'],
-    ['WTR-117 marked for audit review', 'Verification engine', '2 hours ago'],
-    ['BHR-042 reached verification threshold', 'Verification engine', '3 hours ago'],
-    ['Daily reconciliation scheduled for 02:00 UTC', 'System scheduler', '4 hours ago'],
+    { event: 'Dashboard data synchronized', detail: 'MajiShwari system', age: '1 hour ago' },
+    { event: 'WTR-117 marked for audit review', detail: 'Verification engine', age: '2 hours ago' },
+    {
+      event: 'BHR-042 reached verification threshold',
+      detail: 'Verification engine',
+      age: '3 hours ago',
+    },
+    {
+      event: 'Daily reconciliation scheduled for 02:00 UTC',
+      detail: 'System scheduler',
+      age: '4 hours ago',
+    },
   ],
   fundingRequests: [
     {
@@ -319,7 +339,7 @@ function buildSearchIndex(
     })
   }
 
-  for (const [county, score, label] of workspace.vulnerability) {
+  for (const { county, score, label } of workspace.vulnerability) {
     items.push({
       id: `vulnerability-${county}`,
       category: 'Vulnerability',
@@ -330,7 +350,7 @@ function buildSearchIndex(
     })
   }
 
-  for (const [title, detail] of workspace.rules) {
+  for (const { title, detail } of workspace.rules) {
     items.push({
       id: `rule-${title}`,
       category: 'Rule',
@@ -340,7 +360,7 @@ function buildSearchIndex(
     })
   }
 
-  for (const [event, detail, age] of workspace.activity) {
+  for (const { event, detail, age } of workspace.activity) {
     items.push({
       id: `activity-${event}`,
       category: 'Activity',
@@ -351,6 +371,12 @@ function buildSearchIndex(
   }
 
   return items
+}
+
+function toneForLabel(label: 'High risk' | 'Watch' | 'Stable') {
+  if (label === 'High risk') return 'risk-high'
+  if (label === 'Watch') return 'risk-mid'
+  return 'risk-low'
 }
 
 function greetingForHour(hour: number) {
@@ -2296,8 +2322,9 @@ function App() {
                           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
                         <MapFocus county={selectedCounty} />
-                        {workspace.vulnerability.map(([county, score, label, tone]) => {
+                        {workspace.vulnerability.map(({ county, score, label }) => {
                           const coordinates = riskCoordinates[county]
+                          const tone = toneForLabel(label)
                           const color =
                             tone === 'risk-high'
                               ? '#d46d52'
@@ -2331,7 +2358,7 @@ function App() {
                       <div className="map-hint">Click a county to focus the map</div>
                     </div>
                     <div className="risk-list">
-                      {workspace.vulnerability.map(([county, score, label, tone]) => (
+                      {workspace.vulnerability.map(({ county, score, label }) => (
                         <button
                           className={selectedCounty === county ? 'risk-row selected' : 'risk-row'}
                           data-search-id={`vulnerability-${county}`}
@@ -2344,7 +2371,7 @@ function App() {
                           </div>
                           <b>{score}</b>
                           <span>
-                            <i className={tone} />
+                            <i className={toneForLabel(label)} />
                             {label}
                           </span>
                         </button>
@@ -2366,7 +2393,7 @@ function App() {
                     </span>
                   </div>
                   <div className="rule-list">
-                    {workspace.rules.map(([title, detail], index) => (
+                    {workspace.rules.map(({ title, detail }, index) => (
                       <div className="panel rule-card" data-search-id={`rule-${title}`} key={title}>
                         <span className="rule-number">0{index + 1}</span>
                         <div>
@@ -2392,7 +2419,7 @@ function App() {
                     </span>
                   </div>
                   <div className="panel event-list">
-                    {workspace.activity.map(([event, detail, age]) => (
+                    {workspace.activity.map(({ event, detail, age }) => (
                       <div className="event-row" data-search-id={`activity-${event}`} key={event}>
                         <span className="event-dot" />
                         <div>
