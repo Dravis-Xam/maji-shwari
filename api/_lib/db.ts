@@ -125,4 +125,25 @@ async function createSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  // SMS phone linking: a one-time code generated from the dashboard,
+  // redeemed by texting "LINK <code>" to the Twilio number.
+  await query`
+    CREATE TABLE IF NOT EXISTS link_codes (
+      code TEXT PRIMARY KEY,
+      user_sub TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('community', 'government', 'donor')),
+      name TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await query`
+    CREATE TABLE IF NOT EXISTS phone_links (
+      phone_key TEXT PRIMARY KEY,
+      user_sub TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('community', 'government', 'donor')),
+      name TEXT NOT NULL,
+      linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
 }
